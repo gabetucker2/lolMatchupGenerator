@@ -150,7 +150,6 @@ Conversely, Warwick and Dr. Mundo have a `-0.27` correlation. Since this correla
 14. Darius
 15. Garen
 
-## Best two-trick combos in the game
 ### 5 best top lane two-tricks combos
 1. Dr. Mundo / Smolder (best two-trick combo in the game)
 2. Cassiopeia / Dr. Mundo
@@ -194,7 +193,6 @@ The rest of this dataset is unfortunately not very interesting because the **15 
 14. Ryze / Swain
 15. Ryze / Singed
 
-## Best three-trick combos in the game
 ### 15 best top lane three-tricks combos (exclusion after 1 appearance)
 1. Cassiopeia / Dr. Mundo / Smolder
 2. Akali / Heimerdinger / Yorick
@@ -229,7 +227,6 @@ The rest of this dataset is unfortunately not very interesting because the **15 
 14. Illaoi / Malphite / Maokai
 15. Malphite / Maokai / Udyr
 
-## Best four-trick combos in the game
 ### 15 best top lane four-tricks combos (exclusion after 1 appearance)
 1. Akali / Cassiopeia / Dr. Mundo / Smolder
 2. Fiora / Heimerdinger / Vayne / Yorick
