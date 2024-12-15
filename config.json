@@ -1,7 +1,7 @@
 {
     "input_file": "input.tsv",
-    "num_champions_per_pool": 4,
-    "pool_appearance_limit": 2,
+    "num_champions_per_pool": 5,
+    "pool_appearance_limit": 1,
     "top_pools_to_display": 15,
     "exclude_champions": ["Dr. Mundo", "Smolder", "Cassiopeia", "Akali"],
     "only_include_champions": ["Warwick", "Dr. Mundo", "Smolder", "Swain", "Illaoi", "Yorick", "Malphite"],
