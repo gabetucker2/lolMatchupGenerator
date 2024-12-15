@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 import pandas as pd
@@ -19,6 +20,7 @@ exclude_champions = config.get("exclude_champions", [])
 only_include_champions = config.get("only_include_champions", [])
 do_exclude_champions = config.get("do_exclude_champions", False)
 do_only_include_champions = config.get("do_only_include_champions", False)
+pool_appearance_limit = config["pool_appearance_limit"]
 
 # Load the data from the TSV file specified in the config
 updated_data = pd.read_csv(os.path.join(os.getcwd(), file_path), sep='\t', index_col=0)
@@ -43,35 +45,89 @@ elif do_exclude_champions and exclude_champions:
 # Check if filtered columns exist
 if len(filtered_columns) == 0:
     print("No valid columns available after filtering. Please check your configuration.")
-else:
-    # Compute the correlation matrix using the full dataset
-    full_correlation_matrix = updated_data.corr()
+    sys.exit()
 
-    # Extract the filtered champions for final output
-    final_correlation_matrix = full_correlation_matrix.loc[filtered_columns, filtered_columns]
+# Calculate the standard deviation of winrates for each champion
+champ_std_devs = updated_data.std(axis=0)
 
-    # Calculate the total correlation coefficient for each champion
-    total_correlation = final_correlation_matrix.sum()
+# Sort champions by standard deviation in descending order
+sorted_champ_std_devs = champ_std_devs.sort_values(ascending=False)
 
-    # Generate all combinations of champions based on the config
-    champion_combinations = combinations(final_correlation_matrix.columns, num_champions_per_pool)
+# Display the champions sorted by standard deviation
+print("Champs sorted by average winrate standard deviation:")
+for i, (champ, std_dev) in enumerate(sorted_champ_std_devs.items(), start=1):
+    print(f"{i}. {champ}: {std_dev}")
 
-    # Calculate the combined correlation for each combination
-    combination_scores = {}
-    for combo in champion_combinations:
-        combo_score = sum(total_correlation[list(combo)])
-        combination_scores[combo] = combo_score
+print("---------------------------------------------------------------")
 
-    # Sort combinations by their total correlation score (lowest to highest)
-    sorted_combinations = sorted(combination_scores.items(), key=lambda x: x[1])
+# Compute the correlation matrix using the full dataset
+full_correlation_matrix = updated_data.corr()
 
-    # Extract the top pools as specified in the config
-    best_pools = sorted_combinations[:top_pools_to_display]
+# Calculate the mean of winrate correlations for each champion
+champ_means = full_correlation_matrix.mean(axis=0)
 
-    # Display the best pools
-    print(f"Top {top_pools_to_display} Champion Pools with the Lowest Total Correlation Coefficients:")
-    for i, (combo, score) in enumerate(best_pools, 1):
-        print(f"Pool {i}: {combo} with total correlation score: {score}")
+# Sort champions by mean correlation in descending order
+sorted_champ_means = champ_means.sort_values(ascending=False)
+
+# Display the champions sorted by mean correlation
+print("Champs sorted by average correlation with others:")
+for i, (champ, mean_corr) in enumerate(sorted_champ_means.items(), start=1):
+    print(f"{i}. {champ}: {mean_corr}")
+
+print("---------------------------------------------------------------")
+
+# Extract the filtered champions for final output
+final_correlation_matrix = full_correlation_matrix.loc[filtered_columns, filtered_columns]
+
+# Calculate the total correlation coefficient for each champion
+total_correlation = final_correlation_matrix.sum()
+
+# Generate all combinations of champions based on the config
+champion_combinations = combinations(final_correlation_matrix.columns, num_champions_per_pool)
+
+# Ensure `pool_appearance_dict` is initialized properly
+pool_appearance_dict = {champ: 0 for champ in final_correlation_matrix.columns}
+
+# Calculate the combined correlation for each combination
+combination_scores = {}
+for combo in champion_combinations:
+    combo_score = sum(total_correlation[list(combo)])
+    combination_scores[combo] = combo_score
+
+# Sort combinations by their total correlation score (lowest to highest)
+sorted_combinations = sorted(combination_scores.items(), key=lambda x: x[1])
+
+# Implement champion appearance restriction
+valid_combinations = []
+
+for combo, score in sorted_combinations:
+    # Check if all champions in the combo meet the restriction based on `pool_appearance_limit`
+    if all(pool_appearance_dict.get(champ, 0) < pool_appearance_limit for champ in combo):
+        # Temporarily update counts to reserve these champions
+        valid = True
+        for champ in combo:
+            if pool_appearance_dict[champ] + 1 > pool_appearance_limit:
+                valid = False
+                break
+
+        # If valid, add the combination and update the dictionary
+        if valid:
+            for champ in combo:
+                pool_appearance_dict[champ] += 1
+            valid_combinations.append((combo, score))
+        
+        # Stop if enough valid combinations have been found
+        if len(valid_combinations) >= top_pools_to_display:
+            break
+
+# Display the best pools with restricted appearances
+print(f"Top {top_pools_to_display} champ pools with the lowest total correlation coefficients with {pool_appearance_limit} max appearances of the same champ between champ pools:")
+for i, (combo, score) in enumerate(valid_combinations, 1):
+    print(f"Pool {i}: {combo} with total correlation score: {score}")
+
+print("---------------------------------------------------------------")
+
+if heatmap_settings["visualize"]:
 
     # Generate heatmap if data is valid
     if not final_correlation_matrix.empty and not final_correlation_matrix.isna().all().all():
