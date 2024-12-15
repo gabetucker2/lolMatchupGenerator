@@ -1,14 +1,14 @@
 {
     "input_file": "input.tsv",
-    "num_champions_per_pool": 5,
+    "num_champions_per_pool": 2,
     "pool_appearance_limit": 1,
     "top_pools_to_display": 15,
     "exclude_champions": ["Dr. Mundo", "Smolder", "Cassiopeia", "Akali"],
-    "only_include_champions": ["Warwick", "Dr. Mundo", "Smolder", "Swain", "Illaoi", "Yorick", "Malphite"],
+    "only_include_champions": ["K'Sante", "Ornn", "Vladimir", "Ambessa", "Galio"],
     "do_exclude_champions": false,
-    "do_only_include_champions": false,
+    "do_only_include_champions": true,
     "heatmap_settings": {
-        "visualize": false,
+        "visualize": true,
         "figsize": [16, 12],
         "textsize": 6,
         "cmap": "coolwarm",

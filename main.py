@@ -144,3 +144,6 @@ if heatmap_settings["visualize"]:
         plt.show()
     else:
         print("Correlation matrix is empty or contains only NaN values. Heatmap cannot be generated.")
+
+# Wait for user input before closing
+input("Press Enter to exit...")
