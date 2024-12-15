@@ -6,7 +6,7 @@
     "exclude_champions": ["Dr. Mundo", "Smolder", "Cassiopeia", "Akali"],
     "only_include_champions": ["K'Sante", "Ornn", "Vladimir", "Ambessa", "Galio"],
     "do_exclude_champions": false,
-    "do_only_include_champions": true,
+    "do_only_include_champions": false,
     "heatmap_settings": {
         "visualize": true,
         "figsize": [16, 12],
