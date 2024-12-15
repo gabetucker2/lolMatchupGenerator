@@ -1,91 +1,88 @@
-import requests
+import os
+import json
 import pandas as pd
-import random
+import matplotlib.pyplot as plt
+import seaborn as sns
+from itertools import combinations
 
-# Data Dragon Base URL for champion data
-DATA_DRAGON_URL = "https://ddragon.leagueoflegends.com/cdn/13.20.1/data/en_US/champion.json"
+# Load configuration from the JSON file
+config_file_path = "config.json"
+with open(config_file_path, "r") as config_file:
+    config = json.load(config_file)
 
-# Champion list (static for consistency in matchup table rows)
-champions = [
-    "Aatrox", "Akali", "Akshan", "Ambessa", "Aurora", "Camille", "Cassiopeia",
-    "Cho'Gath", "Darius", "Dr. Mundo", "Fiora", "Gangplank",
-    "Garen", "Gnar", "Gragas", "Gwen", "Heimerdinger",
-    "Illaoi", "Irelia", "Jax", "Jayce", "K'Sante", "Kayle",
-    "Kennen", "Kled", "Lillia", "Malphite", "Maokai",
-    "Mordekaiser", "Nasus", "Nocturne", "Olaf", "Ornn",
-    "Pantheon", "Poppy", "Quinn", "Renekton", "Riven",
-    "Ryze", "Sett", "Shen", "Singed", "Sion", "Smolder", "Swain",
-    "Sylas", "Tahm Kench", "Teemo", "Trundle", "Tryndamere",
-    "Udyr", "Urgot", "Varus", "Vayne", "Vladimir", "Volibear",
-    "Warwick", "Wukong", "Yasuo", "Yone", "Yorick", "Zac"
-]
+# Extract values from the configuration
+file_path = config["input_file"]
+adjust_winrate_baseline = config["adjust_winrate_baseline"]
+num_champions_per_pool = config["num_champions_per_pool"]
+top_pools_to_display = config["top_pools_to_display"]
+heatmap_settings = config["heatmap_settings"]
+exclude_columns = config.get("exclude_columns", [])  # New variable for columns to exclude
 
-# Specify the "as X" champions to include in the output
-selected_champions = ["Jax", "Ornn", "Gwen", "Darius", "Singed"]
+# Load the data from the TSV file specified in the config
+updated_data = pd.read_csv(os.path.join(os.getcwd(), file_path), sep='\t', index_col=0)
 
-def get_champion_ids():
-    """Fetch champion IDs from Data Dragon."""
-    print(f"Requesting champion data from Data Dragon: {DATA_DRAGON_URL}")
-    response = requests.get(DATA_DRAGON_URL)
-    if response.status_code != 200:
-        print(f"Failed to fetch champion data: HTTP {response.status_code}")
-        print(f"Response content: {response.text[:500]}")
-        return {}
+# Replace non-numeric values ("/") with NaN
+updated_data.replace("/", pd.NA, inplace=True)
 
-    try:
-        data = response.json()
-        print("Successfully fetched champion data.")
-        return {champ['id']: int(champ['key']) for champ in data['data'].values()}
-    except KeyError as e:
-        print(f"Error parsing champion ID data: {e}")
-        print(f"Response content: {response.text[:500]}")
-        return {}
+# Convert data to numeric
+updated_data = updated_data.apply(pd.to_numeric)
 
-def generate_matchup_win_rates():
-    """Simulate win rates and sample sizes."""
-    matchup_data = {}
-    for champion in champions:
-        matchup_data[champion] = {}
-        for opponent in champions:
-            if champion == opponent:
-                matchup_data[champion][opponent] = "/"  # Same champion matchups are not relevant
-            else:
-                sample_size = random.randint(50, 500)  # Random sample size for demonstration
-                win_rate = random.uniform(40, 60)  # Simulated win rate between 40% and 60%
-                matchup_data[champion][opponent] = f"{win_rate:.1f}% ({sample_size})"
-    return matchup_data
+# Drop columns specified in the exclude_columns variable
+if exclude_columns:
+    updated_data.drop(columns=exclude_columns, inplace=True, errors='ignore')
 
-def main():
-    print("Fetching champion IDs...")
-    champion_ids = get_champion_ids()
-    if not champion_ids:
-        print("Failed to retrieve champion IDs.")
-        return
+# Create a copy of the dataset for adjustments
+adjusted_data = updated_data.copy()
 
-    print("Generating matchup win rates...")
-    matchup_data = generate_matchup_win_rates()
+# Iterate over each column to adjust win rates
+for col in adjusted_data.columns:
+    # Calculate the column average
+    col_average = adjusted_data[col].mean()
+    
+    # Calculate the adjustment value
+    adjustment = adjust_winrate_baseline - col_average
+    
+    # Apply the adjustment to all elements in the column
+    adjusted_data[col] += adjustment
 
-    # Format data for the DataFrame
-    data = {"VS": champions}
-    for champion in selected_champions:
-        print(f"Processing data for {champion}...")
-        if champion not in matchup_data:
-            print(f"No data available for {champion}.")
-            data[f"as {champion}"] = ["/" for _ in champions]
-            continue
+# Calculate the correlation matrix for the adjusted data
+adjusted_correlation_matrix = adjusted_data.corr()
 
-        # Map matchup data for each opponent
-        row = [matchup_data[champion].get(opponent, "/") for opponent in champions]
-        data[f"as {champion}"] = row
+# Calculate the total correlation coefficient for each champion
+total_correlation = adjusted_correlation_matrix.sum()
 
-    # Create a DataFrame and filter columns to include only selected champions
-    selected_columns = ["VS"] + [f"as {champion}" for champion in selected_champions]
-    df = pd.DataFrame(data)[selected_columns]
+# Find the best champion pools
+# Generate all combinations of champions based on the config
+champion_combinations = combinations(adjusted_correlation_matrix.columns, num_champions_per_pool)
 
-    # Save the DataFrame to a CSV file
-    file_path = "league_matchup_win_rates.csv"
-    df.to_csv(file_path, index=False)
-    print(f"Matchup win rates saved to {file_path}")
+# Calculate the combined correlation for each combination
+combination_scores = {}
+for combo in champion_combinations:
+    combo_score = sum(total_correlation[list(combo)])
+    combination_scores[combo] = combo_score
 
-if __name__ == "__main__":
-    main()
+# Sort combinations by their total correlation score (lowest to highest)
+sorted_combinations = sorted(combination_scores.items(), key=lambda x: x[1])
+
+# Extract the top pools as specified in the config
+best_pools = sorted_combinations[:top_pools_to_display]
+
+# Display the best pools
+print(f"Top {top_pools_to_display} Champion Pools with the Lowest Total Correlation Coefficients:")
+for i, (combo, score) in enumerate(best_pools, 1):
+    print(f"Pool {i}: {combo} with total correlation score: {score}")
+
+if heatmap_settings["visualize"]:
+
+    # Create a heatmap of the adjusted correlation matrix
+    plt.figure(figsize=tuple(heatmap_settings["figsize"]))
+    sns.heatmap(
+        adjusted_correlation_matrix,
+        annot=heatmap_settings["annot"],
+        cmap=heatmap_settings["cmap"],
+        linewidths=heatmap_settings["linewidths"],
+        fmt=heatmap_settings["fmt"],
+        annot_kws={"size": 6}
+    )
+    plt.title(heatmap_settings["title"])
+    plt.show()

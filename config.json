@@ -1,0 +1,16 @@
+{
+    "input_file": "input.tsv",
+    "adjust_winrate_baseline": 15,
+    "num_champions_per_pool": 3,
+    "top_pools_to_display": 10,
+    "exclude_columns": [], 
+    "heatmap_settings": {
+        "visualize": true,
+        "figsize": [16, 12],
+        "cmap": "coolwarm",
+        "annot": true,
+        "linewidths": 0.5,
+        "fmt": ".2f",
+        "title": "Correlation Matrix Heatmap"
+    }
+}
