@@ -11,6 +11,6 @@
         "annot": true,
         "linewidths": 0.5,
         "fmt": ".2f",
-        "title": "Correlation Matrix Heatmap"
+        "title": "Top Lane Champion Counterpick Correlation Heatmap"
     }
 }
