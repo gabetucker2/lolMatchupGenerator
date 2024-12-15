@@ -3,8 +3,8 @@
     "num_champions_per_pool": 2,
     "pool_appearance_limit": 1,
     "top_pools_to_display": 15,
-    "exclude_champions": ["Dr. Mundo", "Smolder", "Cassiopeia", "Akali"],
-    "only_include_champions": ["K'Sante", "Ornn", "Vladimir", "Ambessa", "Galio"],
+    "exclude_champions": [],
+    "only_include_champions": ["K'Sante", "Ornn", "Vladimir", "Ambessa", "Galio", "Jax", "Gwen", "Darius"],
     "do_exclude_champions": false,
     "do_only_include_champions": false,
     "heatmap_settings": {

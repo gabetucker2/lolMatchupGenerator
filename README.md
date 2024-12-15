@@ -71,6 +71,7 @@ The **League of Legends Top Lane Matchup Generator** helps you build an optimize
 - **Enlarge image here:** [Enlarged image](https://raw.githubusercontent.com/gabetucker2/lolMatchupGenerator/refs/heads/main/heatmap.png)
 - **Winrate Data Source:** Extracted from [www.op.gg](https://www.op.gg)  
 - **Patch Version:** **14.23**
+- **Rank:** **Emerald +**
 
 *This heatmap is meta-agnostic, meaning that how meta a champion is has no impact on the champion's matchup correlations with other champs.*
 
