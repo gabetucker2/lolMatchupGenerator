@@ -1,48 +1,58 @@
-This dataset can help you build a champ pool by covering as many top lane counterpicks as possible with as few champs as possible.
+# League of Legends Matchup Generator
 
+This dataset is designed to help you build a champion pool by covering as many top lane counterpicks as possible with as few champions as possible.
 
-Data was extracted from Patch 14.23
+Data extracted from **Patch 14.23**.
 
----------------------------------------------------------
+---
 
-GITHUB FILE: https://github.com/gabetucker2/lolMatchupGenerator
+## GitHub Repository
 
-HOW TO INSTALL TO YOUR COMPUTER:
+[https://github.com/gabetucker2/lolMatchupGenerator](https://github.com/gabetucker2/lolMatchupGenerator)
 
-For Windows:
+---
 
-1. Install Git:
-   - Go to https://git-scm.com and download the installer.
-   - Run the installer and complete the setup with default settings.
+## Installation Guide (Windows)
 
-2. Clone the Repository:
-   - Open Command Prompt:
-     Press Win + R, type cmd, and press Enter.
-   - Run the following commands:
-     cd <desired-folder-path>
-     git clone https://github.com/gabetucker2/lolMatchupGenerator.git
+### Step 1: Install Git
+1. Visit [https://git-scm.com](https://git-scm.com) and download the Git installer.
+2. Run the installer and follow the setup wizard using the default settings.
 
-3. Access the Project:
-   - Navigate to the cloned folder:
-     cd lolMatchupGenerator
+### Step 2: Clone the Repository
+1. Open Command Prompt:
+   - Press `Win + R`, type `cmd`, and press Enter.
+2. Navigate to the folder where you want to save the project:
+   ```bash
+   cd <desired-folder-path>
+   ```
+   Replace `<desired-folder-path>` with the path to your desired folder.
+3. Clone the repository:
+   ```bash
+   git clone https://github.com/gabetucker2/lolMatchupGenerator.git
+   ```
 
+### Step 3: Navigate to the Project
+1. Change to the project directory:
+   ```bash
+   cd lolMatchupGenerator
+   ```
 
-For Mac:
+---
 
-1. Install Git:
-   - Open Terminal:
-     Press Cmd + Space, type Terminal, and press Enter.
-   - Install Xcode command line tools:
-     xcode-select --install
-   - Follow the prompts to complete installation.
+## Installing Python on Windows (if not already installed)
 
-2. Clone the Repository:
-   - In the Terminal, run:
-     cd <desired-folder-path>
-     git clone https://github.com/gabetucker2/lolMatchupGenerator.git
+1. Download Python:
+   - Visit [https://www.python.org/downloads/](https://www.python.org/downloads/) and download the latest version of Python.
+2. Install Python:
+   - Run the installer and make sure to check **"Add Python to PATH"** during the installation process.
+   - Follow the setup wizard to complete the installation.
+3. Verify Installation:
+   - Open Command Prompt and type:
+     ```bash
+     python --version
+     ```
+     You should see the installed Python version (e.g., `Python 3.x.x`).
 
-3. Access the Project:
-   - Navigate to the cloned folder:
-     cd lolMatchupGenerator
+---
 
-Replace <desired-folder-path> with the folder path where you want to save the repository.
+Now you’re ready to start working with the League of Legends Matchup Generator!
