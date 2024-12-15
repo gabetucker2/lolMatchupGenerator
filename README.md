@@ -4,6 +4,7 @@ The **League of Legends Top Lane Matchup Generator** dataset helps you build an 
 
 ![Heatmap](heatmap.png)
 
+- **Enlarge image here:** [Enlarged image](https://raw.githubusercontent.com/gabetucker2/lolMatchupGenerator/refs/heads/main/heatmap.png)
 - **Winrate Data Source:** Extracted from [www.op.gg](https://www.op.gg)  
 - **Patch Version:** **14.23**
 
