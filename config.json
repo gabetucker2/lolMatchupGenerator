@@ -1,16 +1,19 @@
 {
     "input_file": "input.tsv",
-    "adjust_winrate_baseline": 15,
     "num_champions_per_pool": 3,
-    "top_pools_to_display": 10,
-    "exclude_columns": [], 
+    "top_pools_to_display": 15,
+    "exclude_champions": ["Warwick", "Dr. Mundo", "Smolder", "Swain", "Illaoi", "Yorick", "Malphite"],
+    "only_include_champions": ["Warwick", "Dr. Mundo", "Smolder", "Swain", "Illaoi", "Yorick", "Malphite"],
+    "do_exclude_champions": false,
+    "do_only_include_champions": false,
     "heatmap_settings": {
         "visualize": true,
         "figsize": [16, 12],
+        "textsize": 6,
         "cmap": "coolwarm",
         "annot": true,
         "linewidths": 0.5,
         "fmt": ".2f",
-        "title": "Top Lane Champion Counterpick Correlation Heatmap"
+        "title": "Top Lane Champion Counterpick Correlation Heatmap (Patch 14.23)"
     }
 }
