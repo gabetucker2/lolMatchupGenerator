@@ -1,24 +1,25 @@
 {
-    "input_file": "input.tsv",
-    "current_champion_pool": ["Volibear", "Ornn", "Vladimir", "Ambessa", "Galio", "Heimerdinger"],
-    "num_champions_per_pool": 2,
-    "pool_appearance_limit": 1,
-    "top_pools_to_display": 15,
-    "exclude_champions": [],
-    "only_include_champions": ["Volibear", "Ornn", "Vladimir", "Ambessa", "Galio", "Heimerdinger"],
-    "do_exclude_champions": false,
-    "do_only_include_champions": true,
+    "your_name": "Gabriel",
+    "input_file": "top.tsv",
+    "current_champion_pool": [
+        "ornn",
+        "heimerdinger",
+        "trundle",
+        "singed",
+        "galio",
+        "illaoi",
+        "vayne"
+    ],
     "heatmap_settings": {
-        "visualize": true,
-        "figsize": [16, 12],
-        "textsize": 6,
-        "cmap": "coolwarm",
+        "figsize": [
+            14,
+            12
+        ],
         "annot": true,
-        "linewidths": 0.5,
+        "cmap": "coolwarm",
+        "linewidths": 0.4,
         "fmt": ".2f",
-        "title": "Top Lane Champion Counterpick Correlation Heatmap (Patch 14.23)"
-    },
-    "visualize_general_stats": false,
-    "visualize_pool_wr_stats": true,
-    "visualize_pool_generator_stats": false
+        "title": "Champion Correlation Heatmap",
+        "textsize": 5
+    }
 }

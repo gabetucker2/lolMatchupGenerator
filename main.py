@@ -1,233 +1,344 @@
-import sys
-import os
-import json
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from itertools import combinations
+# Setup
+import functions
 
-# Load configuration from the JSON file
+# Load configuration
 config_file_path = "config.json"
-with open(config_file_path, "r") as config_file:
-    config = json.load(config_file)
+config = functions.load_config(config_file_path)
 
-# Extract values from the configuration
+# Load data once
 file_path = config["input_file"]
-num_champions_per_pool = config["num_champions_per_pool"]
-top_pools_to_display = config["top_pools_to_display"]
-heatmap_settings = config["heatmap_settings"]
-exclude_champions = config.get("exclude_champions", [])
-current_champion_pool = config.get("current_champion_pool", [])
-only_include_champions = config.get("only_include_champions", [])
-visualize_general_stats = config.get("visualize_general_stats", False)
-visualize_pool_wr_stats = config.get("visualize_pool_wr_stats", False)
-visualize_pool_generator_stats = config.get("visualize_pool_generator_stats", False)
-do_exclude_champions = config.get("do_exclude_champions", False)
-do_only_include_champions = config.get("do_only_include_champions", False)
-pool_appearance_limit = config["pool_appearance_limit"]
+data = functions.load_data(file_path)
 
-# Load the data from the TSV file specified in the config
-updated_data = pd.read_csv(os.path.join(os.getcwd(), file_path), sep='\t', index_col=0)
+# Normalize data immediately after loading.
+normalized_data = functions.normalize_data(data.copy())
 
-# Replace non-numeric values ("/") with NaN
-updated_data.replace("/", pd.NA, inplace=True)
+# Create name mapping
+name_mapping = functions.create_name_mapping(data.columns.tolist())
 
-# Convert data to numeric
-updated_data = updated_data.apply(pd.to_numeric)
+# Normalize the current champion pool
+normalized_pool = [functions.normalize_champ_name(champ) for champ in config["current_champion_pool"]]
+mapped_pool = [name_mapping.get(champ, None) for champ in normalized_pool]
+mapped_pool = [champ for champ in mapped_pool if champ is not None]
 
-# Filtering logic based on configuration flags
-filtered_columns = updated_data.columns.tolist()
+# Warn about unmapped champs
+unmapped_champs = [champ for champ in config["current_champion_pool"] if functions.normalize_champ_name(champ) not in name_mapping]
+if unmapped_champs:
+    print(f"Warning: The following champs in your pool do not exist in the dataset: {unmapped_champs}")
 
-# Implement column-based filtering logic
-if do_only_include_champions and only_include_champions:
-    # Keep only valid champions in the dataset
-    filtered_columns = [champ for champ in only_include_champions if champ in updated_data.columns]
-elif do_exclude_champions and exclude_champions:
-    # Exclude specified champions if they exist
-    filtered_columns = [champ for champ in updated_data.columns if champ not in exclude_champions]
+# Update the pool with normalized names
+config["current_champion_pool"] = mapped_pool
 
-# Check if filtered columns exist
-if len(filtered_columns) == 0:
-    print("No valid columns available after filtering. Please check your configuration.")
-    sys.exit()
+# Intro message
+functions.print_break()
+print(f"Greetings, {config['your_name']}!")
 
-# Compute the correlation matrix using the full dataset
-full_correlation_matrix = updated_data.corr()
+# Command dictionary for dynamic help
+commands = {
+    "analyze-champs": "Analyze champions with different metrics",
+    "analyze-pool": "Analyze your current pool's performance",
+    "champ-pick": "Analyze matchups for specific champions",
+    "generate-pools": "Generate new champ pools",
+    "heatmap": "Display a correlation heatmap",
+    "settings": "Edit settings such as heatmap options, name, file, or champ pool",
+    "help": "Show this help menu",
+    "exit": "Exit the program",
+}
 
-if visualize_general_stats:
+def map_input_to_index(user_input, options):
+    """Convert a numeric string or a string to an index in the list of options."""
+    try:
+        index = int(user_input) - 1
+        if 0 <= index < len(options):
+            return index
+    except ValueError:
+        pass  # If not a number, it could be a string
 
-    # Calculate the standard deviation of winrates for each champion
-    champ_std_devs = updated_data.std(axis=0)
+    if user_input in options:
+        return options.index(user_input)
 
-    # Sort champions by standard deviation in descending order
-    sorted_champ_std_devs = champ_std_devs.sort_values(ascending=False)
+    return -1
 
-    # Display the champions sorted by standard deviation
-    print("Champs sorted by average winrate standard deviation:")
-    for i, (champ, std_dev) in enumerate(sorted_champ_std_devs.items(), start=1):
-        print(f"{i}. {champ}: {std_dev}")
-
-    print("---------------------------------------------------------------")
-
-    # Calculate the mean of winrate correlations for each champion
-    champ_means = full_correlation_matrix.mean(axis=0)
-
-    # Sort champions by mean correlation in descending order
-    sorted_champ_means = champ_means.sort_values(ascending=False)
-
-    # Display the champions sorted by mean correlation
-    print("Champs sorted by average correlation with others:")
-    for i, (champ, mean_corr) in enumerate(sorted_champ_means.items(), start=1):
-        print(f"{i}. {champ}: {mean_corr}")
-
-    print("---------------------------------------------------------------")
-
-if visualize_pool_wr_stats:
-
-    # Create a list of champions NOT in current_champion_pool
-    remaining_champions = [champ for champ in updated_data.columns if champ not in current_champion_pool]
-
-    # Calculate the initial average maximum winrate of the current champ pool
-    if current_champion_pool:
-        current_pool_data = updated_data[current_champion_pool]
-        current_pool_max_values = current_pool_data.max(axis=1)
-        initial_avg_max_winrate = current_pool_max_values.mean()
-        print(f"Initial average maximum winrate of the current champ pool: {initial_avg_max_winrate}")
+def map_input_to_string(user_input, options):
+    """Convert a numeric string or a string to a string from options, using an index."""
+    index = map_input_to_index(user_input, options)
+    if index != -1:
+        return options[index]
     else:
-        print("Current champ pool is empty. Cannot calculate initial average maximum winrate.")
+        return None
 
-    print("---------------------------------------------------------------")
+# Help menu
+def show_help():
+    """Display available commands."""
+    print("Available commands:")
+    for i, (cmd, desc) in enumerate(commands.items(), 1):
+        print(f"{i}. {cmd} - {desc}")
 
-    # Dictionary to store the average maximum winrate for each remaining champion
-    champion_avg_max_winrates = {}
+def analyze_champs():
+    """Subcommands for analyzing champion statistics with filtering."""
+    filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for analyze-champs")
 
-    # Iterate through each champion in the remaining list
-    for champ in remaining_champions:
-        # Create a temporary pool including the current champion pool plus the iterated champion
-        temp_pool = current_champion_pool + [champ]
+    subcommands = ["std-devs", "mean-corrs", "help", "back"]
 
-        # Extract relevant data from the updated_data DataFrame for the temporary pool
-        temp_data = updated_data[temp_pool]
+    while True:
+        print("Analyze Champs Subcommands:")
+        for i, cmd in enumerate(subcommands, 1):
+            if cmd != "help" and cmd != "back":
+                print(f"{i}. {cmd} - View champs sorted by {cmd.replace('-', ' ').replace('std devs', 'standard deviation of winrates').replace('mean corrs', 'mean correlation with others')}")
+            else:
+                 print(f"{i}. {cmd}")
 
-        # Calculate the maximum value in each row (max winrate of the pool plus the iterated champion)
-        max_values_per_row = temp_data.max(axis=1)
+        subcommand = input("Enter a subcommand (type 'help' to see list of commands again): ").strip().lower()
+        mapped_subcommand = map_input_to_string(subcommand, subcommands)
 
-        # Calculate the average of these maximum values
-        avg_max_winrate = max_values_per_row.mean()
+        if mapped_subcommand == "std-devs":
+            functions.print_break()
+            functions.visualize_std_devs(filtered_data)
 
-        # Assign the average value to the iterated champion
-        champion_avg_max_winrates[champ] = avg_max_winrate
+        elif mapped_subcommand == "mean-corrs":
+            functions.print_break()
+            functions.visualize_mean_corrs(filtered_data)
 
-    # Sort the champions by their average maximum winrate in descending order
-    sorted_avg_max_winrates = sorted(champion_avg_max_winrates.items(), key=lambda x: x[1], reverse=True)
+        elif mapped_subcommand == "help":
+             for i, cmd in enumerate(subcommands, 1):
+                if cmd != "help" and cmd != "back":
+                    print(f"{i}. {cmd} - View champs sorted by {cmd.replace('-', ' ').replace('std devs', 'standard deviation of winrates').replace('mean corrs', 'mean correlation with others')}")
+                else:
+                    print(f"{i}. {cmd}")
 
-    # Print the champions sorted by their average maximum winrate
-    print("Champs sorted by average maximum winrate when added to the current pool:")
-    for i, (champ, avg_winrate) in enumerate(sorted_avg_max_winrates, start=1):
-        print(f"{i}. {champ}: {avg_winrate}")
+        elif mapped_subcommand == "back":
+             break
+        else:
+            print(f"Invalid subcommand. Use the listed options, or the corresponding numbers.")
 
-    print("---------------------------------------------------------------")
+def analyze_pool():
+    """Subcommands for analyzing the current champ pool."""
+    subcommands = [
+        "current-max",
+        "current-max-norm",
+        "best-add",
+        "best-add-norm",
+        "worst-remove",
+        "worst-remove-norm",
+         "help",
+        "back",
+    ]
 
-    # Dictionary to store the best pool winrate without each champion from the current pool
-    champion_removed_winrates = {}
+    while True:
+        # Display subcommand options once per loop iteration
+        print("---------------------------------------------------------------")
+        print("Analyze Pool Subcommands:")
+        for i, cmd in enumerate(subcommands, 1):
+            if cmd != "help" and cmd != "back":
+                print(f"{i}. {cmd} - Show {cmd.replace('-', ' ').replace('norm', 'normalized')} for the pool")
+            else:
+                print(f"{i}. {cmd}")
 
-    # Iterate through each champion in the current pool
-    for champ in current_champion_pool:
-        # Create a temporary pool excluding the iterated champion
-        temp_pool = [c for c in current_champion_pool if c != champ]
+        # Get user input for subcommand
+        subcommand = input("Enter a subcommand (type 'help' to see list of commands again): ").strip().lower()
+        mapped_subcommand = map_input_to_string(subcommand, subcommands)
 
-        # Extract relevant data from the updated_data DataFrame for the temporary pool
-        temp_data = updated_data[temp_pool]
+        if mapped_subcommand == "current-max":
+            pool_stat = functions.calculate_pool_wr_stats(data, config["current_champion_pool"]) # Changed to use data instead of normalized data
+            if pool_stat:
+                print(f"Current maximum winrate average for the pool: {pool_stat:.2f}")
+            else:
+                print("Current pool is empty or no data available.")
 
-        # Calculate the maximum value in each row (max winrate of the remaining pool)
-        max_values_per_row = temp_data.max(axis=1)
+        elif mapped_subcommand == "current-max-norm":
+            pool_stat = functions.calculate_pool_wr_stats(normalized_data, config["current_champion_pool"]) # Changed to use normalized data
+            if pool_stat:
+                print(f"Normalized maximum winrate average for the pool: {pool_stat:.2f}")
+            else:
+                print("Current pool is empty or no data available.")
 
-        # Calculate the average of these maximum values
-        avg_max_winrate = max_values_per_row.mean()
+        elif mapped_subcommand == "best-add":
+            recommendations = functions.calculate_best_champ_additions(data, config["current_champion_pool"]) # Changed to use data
+            if recommendations:
+                print("Champs that would increase the pool's max winrate average (most to least):")
+                for i, (champ, value) in enumerate(recommendations, 1):
+                    print(f"{i}. {champ.title()}: {value:.2f}")
+            else:
+                print("No champs to recommend.")
 
-        # Assign the average value to the iterated champion as the winrate without them
-        champion_removed_winrates[champ] = avg_max_winrate
+        elif mapped_subcommand == "best-add-norm":
+            recommendations = functions.calculate_best_champ_additions(normalized_data, config["current_champion_pool"]) # Changed to use normalized data
+            if recommendations:
+                print("Champs that would increase the pool's normalized max winrate average (most to least):")
+                for i, (champ, value) in enumerate(recommendations, 1):
+                    print(f"{i}. {champ.title()}: {value:.2f}")
+            else:
+                print("No champs to recommend.")
 
-    # Sort the champions by their winrate without them in descending order
-    sorted_removed_winrates = sorted(champion_removed_winrates.items(), key=lambda x: x[1], reverse=True)
+        elif mapped_subcommand == "worst-remove":
+            removals = functions.calculate_worst_champ_removals(data, config["current_champion_pool"]) # Changed to use data
+            if removals:
+                print("Champs that would decrease the pool's max winrate average (most to least):")
+                for i, (champ, value) in enumerate(removals, 1):
+                    print(f"{i}. {champ.title()}: {value:.2f}")
+            else:
+                print("No champs to remove.")
 
-    # Print the champions sorted by their winrate without them
-    print("Champs sorted by best pool winrate when removed from the current pool:")
-    for i, (champ, winrate) in enumerate(sorted_removed_winrates, start=1):
-        print(f"{i}. {champ}: {winrate}")
+        elif mapped_subcommand == "worst-remove-norm":
+            removals = functions.calculate_worst_champ_removals(normalized_data, config["current_champion_pool"]) # Changed to use normalized data
+            if removals:
+                print("Champs that would decrease the pool's normalized max winrate average (most to least):")
+                for i, (champ, value) in enumerate(removals, 1):
+                    print(f"{i}. {champ.title()}: {value:.2f}")
+            else:
+                print("No champs to remove.")
+        elif mapped_subcommand == "help":
+            for i, cmd in enumerate(subcommands, 1):
+                 if cmd != "help" and cmd != "back":
+                     print(f"{i}. {cmd} - Show {cmd.replace('-', ' ').replace('norm', 'normalized')} for the pool")
+                 else:
+                     print(f"{i}. {cmd}")
 
-    print("---------------------------------------------------------------")
+        elif mapped_subcommand == "back":
+            break
 
-# Extract the filtered champions for final output
-final_correlation_matrix = full_correlation_matrix.loc[filtered_columns, filtered_columns]
+        else:
+            print(f"Invalid subcommand. Use the listed options, or the corresponding numbers.")
 
-if visualize_pool_generator_stats:
 
-    # Calculate the total correlation coefficient for each champion
-    total_correlation = final_correlation_matrix.sum()
+def champ_pick():
+    """Analyze matchups for specific input champions against your current pool."""
+    input_champs = input("Enter the champions to analyze (separated by commas): ").strip().split(",")
+    input_champs = [functions.normalize_champ_name(champ) for champ in input_champs]
 
-    # Generate all combinations of champions based on the config
-    champion_combinations = combinations(final_correlation_matrix.columns, num_champions_per_pool)
+    # Map input champs to dataset champs using name mapping
+    mapped_input_champs = [name_mapping.get(champ, None) for champ in input_champs]
+    mapped_input_champs = [champ for champ in mapped_input_champs if champ is not None]
 
-    # Ensure `pool_appearance_dict` is initialized properly
-    pool_appearance_dict = {champ: 0 for champ in final_correlation_matrix.columns}
+    # Warn about unmapped champs
+    unmapped_input_champs = [champ for champ, mapped in zip(input_champs, mapped_input_champs) if mapped is None]
+    if unmapped_input_champs:
+        print(f"Warning: The following input champs do not exist in the dataset: {', '.join(unmapped_input_champs)}")
+        if not mapped_input_champs:
+            print("No valid input champs provided. Returning to the main menu.")
+            return
 
-    # Calculate the combined correlation for each combination
-    combination_scores = {}
-    for combo in champion_combinations:
-        combo_score = sum(total_correlation[list(combo)])
-        combination_scores[combo] = combo_score
+    # Analyze picks
+    table = functions.analyze_champ_picks(data, config["current_champion_pool"], mapped_input_champs)
+    print(table)
 
-    # Sort combinations by their total correlation score (lowest to highest)
-    sorted_combinations = sorted(combination_scores.items(), key=lambda x: x[1])
+def settings():
+    """Subcommands for editing settings."""
+    subcommands = [
+        "edit-heatmap",
+        "edit-name",
+        "edit-file",
+        "edit-pool",
+        "help",
+        "back"
+    ]
 
-    # Implement champion appearance restriction
-    valid_combinations = []
+    while True:
+        print("Settings Subcommands:")
+        for i, cmd in enumerate(subcommands, 1):
+             if cmd != "help" and cmd != "back":
+                print(f"{i}. {cmd} - {cmd.replace('-', ' ').replace('heatmap', 'heatmap settings').replace('name', 'your name').replace('file', 'the input file path').replace('pool', 'your current champ pool')}")
+             else:
+                  print(f"{i}. {cmd}")
 
-    for combo, score in sorted_combinations:
-        # Check if all champions in the combo meet the restriction based on `pool_appearance_limit`
-        if all(pool_appearance_dict.get(champ, 0) < pool_appearance_limit for champ in combo):
-            # Temporarily update counts to reserve these champions
-            valid = True
-            for champ in combo:
-                if pool_appearance_dict[champ] + 1 > pool_appearance_limit:
-                    valid = False
-                    break
+        subcommand = input("Enter a subcommand (type 'help' to see list of commands again): ").strip().lower()
+        mapped_subcommand = map_input_to_string(subcommand, subcommands)
 
-            # If valid, add the combination and update the dictionary
-            if valid:
-                for champ in combo:
-                    pool_appearance_dict[champ] += 1
-                valid_combinations.append((combo, score))
-            
-            # Stop if enough valid combinations have been found
-            if len(valid_combinations) >= top_pools_to_display:
-                break
+        if mapped_subcommand == "edit-heatmap":
+            functions.print_break()
+            functions.edit_heatmap_settings(config, config_file_path)
 
-    # Display the best pools with restricted appearances
-    print(f"Top {top_pools_to_display} champ pools with the lowest total correlation coefficients with {pool_appearance_limit} max appearances of the same champ between champ pools:")
-    for i, (combo, score) in enumerate(valid_combinations, 1):
-        print(f"Pool {i}: {combo} with total correlation score: {score}")
+        elif mapped_subcommand == "edit-name":
+            functions.print_break()
+            new_name = input("Enter your new name: ").strip()
+            config["your_name"] = new_name
+            functions.save_config(config, config_file_path)
+            print(f"Your name has been updated to {new_name}.")
+            functions.print_break()
 
-    print("---------------------------------------------------------------")
+        elif mapped_subcommand == "edit-file":
+            functions.print_break()
+            new_file = input("Enter the new input file path: ").strip()
+            config["input_file"] = new_file
+            functions.save_config(config, config_file_path)
+            print(f"Input file has been updated to {new_file}.")
+            functions.print_break()
 
-if heatmap_settings["visualize"]:
+        elif mapped_subcommand == "edit-pool":
+            functions.print_break()
+            new_pool = input("Enter your new champ pool, separated by commas: ").strip().split(",")
+            config["current_champion_pool"] = [champ.strip() for champ in new_pool]
+            functions.save_config(config, config_file_path)
+            print(f"Current champ pool has been updated to {', '.join(config['current_champion_pool'])}.")
+            functions.print_break()
+        elif mapped_subcommand == "help":
+            for i, cmd in enumerate(subcommands, 1):
+                if cmd != "help" and cmd != "back":
+                   print(f"{i}. {cmd} - {cmd.replace('-', ' ').replace('heatmap', 'heatmap settings').replace('name', 'your name').replace('file', 'the input file path').replace('pool', 'your current champ pool')}")
+                else:
+                   print(f"{i}. {cmd}")
 
-    # Generate heatmap if data is valid
-    if not final_correlation_matrix.empty and not final_correlation_matrix.isna().all().all():
-        plt.figure(figsize=tuple(heatmap_settings["figsize"]))
-        sns.heatmap(
-            final_correlation_matrix,
-            annot=heatmap_settings["annot"],
-            cmap=heatmap_settings["cmap"],
-            linewidths=heatmap_settings["linewidths"],
-            fmt=heatmap_settings["fmt"],
-            annot_kws={"size": heatmap_settings["textsize"]}
-        )
-        plt.title(heatmap_settings["title"])
-        plt.show()
+        elif mapped_subcommand == "back":
+            break
+
+        else:
+            print(f"Invalid subcommand. Use the listed options, or the corresponding numbers.")
+
+# Command handling loop
+while True:
+    functions.print_break()
+    command_options = list(commands.keys())
+    command = input("Enter a command (type 'help' to see list of commands again): ").strip().lower()
+    
+    
+    if command == "help":
+      show_help()
     else:
-        print("Correlation matrix is empty or contains only NaN values. Heatmap cannot be generated.")
+      for i, cmd in enumerate(command_options, 1):
+        print(f"{i}. {cmd} - {commands[cmd]}")
+      mapped_command = map_input_to_string(command, command_options)
 
-# Wait for user input before closing
-input("Press Enter to exit...")
+      if mapped_command == "analyze-champs":
+          functions.print_break()
+          analyze_champs()
+
+      elif mapped_command == "analyze-pool":
+          analyze_pool()
+
+      elif mapped_command == "champ-pick":
+          functions.print_break()
+          champ_pick()
+
+      elif mapped_command == "generate-pools":
+          functions.print_break()
+
+          filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for generate-pools")
+
+          num_champs = int(input("Enter the number of champs per pool: ").strip())
+          top_pools = int(input("Enter the number of top pools to display: ").strip())
+          pool_limit = int(input("Enter the max appearances of any champ per pool: ").strip())
+          valid_combinations = functions.generate_pool_stats(
+              filtered_data.corr(),
+              num_champs,
+              top_pools,
+              pool_limit
+          )
+          print("Best pools:")
+          for i, combo in enumerate(valid_combinations, 1):
+              print(f"Pool {i}: {combo}")
+
+      elif mapped_command == "heatmap":
+          filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for heatmap")
+          functions.generate_heatmap(filtered_data.corr(), config["heatmap_settings"])
+
+      elif mapped_command == "settings":
+          functions.print_break()
+          settings()
+
+      elif mapped_command == "exit":
+          functions.print_break()
+          print("Goodbye!")
+          break
+
+      else:
+          functions.print_break()
+          print("Invalid command. Type 'help' to see available commands.")
