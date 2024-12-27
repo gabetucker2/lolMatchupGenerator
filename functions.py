@@ -1,4 +1,3 @@
-import sys
 import os
 import json
 import pandas as pd
@@ -6,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from itertools import combinations
 import re
+import numpy as np
 
 def print_break():
     """Print a standardized separator for console output."""
@@ -268,3 +268,44 @@ def select_champs(data, current_pool, prompt="Choose champion selection option")
     else:
         print("Invalid choice. Defaulting to all champions.")
         return data
+
+def generate_pool_stats(correlation_matrix, num_champs, top_pools, max_global_appearances):
+    """Generate pools of champions with the lowest average correlation."""
+
+    # Extract champion names from the correlation matrix
+    champ_names = correlation_matrix.columns.tolist()
+
+    # Generate all combinations of `num_champs`
+    all_combinations = list(combinations(champ_names, num_champs))
+
+    # Calculate the average correlation for each combination
+    pool_scores = []
+    for combo in all_combinations:
+        # Extract the sub-matrix for the current combination
+        sub_matrix = correlation_matrix.loc[combo, combo]
+
+        # Calculate the average correlation (excluding self-correlations)
+        avg_correlation = np.mean(sub_matrix.values[np.triu_indices(len(combo), k=1)])
+        pool_scores.append((combo, avg_correlation))
+
+    # Sort pools by lowest average correlation
+    pool_scores = sorted(pool_scores, key=lambda x: x[1])
+
+    # Enforce the global max appearances constraint
+    champ_global_count = {champ: 0 for champ in champ_names}
+    valid_pools = []
+
+    for pool, score in pool_scores:
+        if all(champ_global_count[champ] < max_global_appearances for champ in pool):
+            valid_pools.append((pool, score))
+            for champ in pool:
+                champ_global_count[champ] += 1
+        if len(valid_pools) >= top_pools:
+            break
+
+    # Clean up the output to make it user-friendly
+    clean_pools = [
+        (", ".join(pool), round(score, 4)) for pool, score in valid_pools
+    ]
+
+    return clean_pools

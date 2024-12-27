@@ -28,10 +28,6 @@ if unmapped_champs:
 # Update the pool with normalized names
 config["current_champion_pool"] = mapped_pool
 
-# Intro message
-functions.print_break()
-print(f"Greetings, {config['your_name']}!")
-
 # Command dictionary for dynamic help
 commands = {
     "analyze-champs": "Analyze champions with different metrics",
@@ -283,62 +279,67 @@ def settings():
         else:
             print(f"Invalid subcommand. Use the listed options, or the corresponding numbers.")
 
+# Intro message
+functions.print_break()
+print(f"Greetings, {config['your_name']}!")
+functions.print_break()
+show_help()
+
 # Command handling loop
 while True:
     functions.print_break()
     command_options = list(commands.keys())
     command = input("Enter a command (type 'help' to see list of commands again): ").strip().lower()
     
-    
-    if command == "help":
-      show_help()
+    mapped_command = map_input_to_string(command, command_options)
+    if mapped_command == "help":
+        show_help()
+    elif mapped_command == "exit":
+        functions.print_break()
+        print("Goodbye!")
+        functions.print_break()
+        break
     else:
-      for i, cmd in enumerate(command_options, 1):
-        print(f"{i}. {cmd} - {commands[cmd]}")
-      mapped_command = map_input_to_string(command, command_options)
+        if mapped_command is None:
+             print("Invalid command. Type 'help' to see available commands.")
+        else:
+          for i, cmd in enumerate(command_options, 1):
+              print(f"{i}. {cmd} - {commands[cmd]}")
 
-      if mapped_command == "analyze-champs":
-          functions.print_break()
-          analyze_champs()
+          if mapped_command == "analyze-champs":
+              functions.print_break()
+              analyze_champs()
 
-      elif mapped_command == "analyze-pool":
-          analyze_pool()
+          elif mapped_command == "analyze-pool":
+              analyze_pool()
 
-      elif mapped_command == "champ-pick":
-          functions.print_break()
-          champ_pick()
+          elif mapped_command == "champ-pick":
+              functions.print_break()
+              champ_pick()
 
-      elif mapped_command == "generate-pools":
-          functions.print_break()
+          elif mapped_command == "generate-pools":
+              functions.print_break()
 
-          filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for generate-pools")
+              filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for generate-pools")
 
-          num_champs = int(input("Enter the number of champs per pool: ").strip())
-          top_pools = int(input("Enter the number of top pools to display: ").strip())
-          pool_limit = int(input("Enter the max appearances of any champ per pool: ").strip())
-          valid_combinations = functions.generate_pool_stats(
-              filtered_data.corr(),
-              num_champs,
-              top_pools,
-              pool_limit
-          )
-          print("Best pools:")
-          for i, combo in enumerate(valid_combinations, 1):
-              print(f"Pool {i}: {combo}")
+              num_champs = int(input("Enter the number of champs per pool: ").strip())
+              top_pools = int(input("Enter the number of top pools to display: ").strip())
+              max_global_appearances = int(input("Enter the max appearances of any champ across all pools: ").strip())
+              valid_combinations = functions.generate_pool_stats(
+                  filtered_data.corr(),
+                  num_champs,
+                  top_pools,
+                  max_global_appearances
+              )
+  
+              print("Best pools:")
+              for i, (pool, score) in enumerate(valid_combinations, 1):
+                  print(f"Pool {i}: {pool} (Average Correlation: {score})")
 
-      elif mapped_command == "heatmap":
-          filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for heatmap")
-          functions.generate_heatmap(filtered_data.corr(), config["heatmap_settings"])
+          elif mapped_command == "heatmap":
+              filtered_data = functions.select_champs(data, config["current_champion_pool"], "Choose champion selection option for heatmap")
+              functions.generate_heatmap(filtered_data.corr(), config["heatmap_settings"])
 
-      elif mapped_command == "settings":
-          functions.print_break()
-          settings()
-
-      elif mapped_command == "exit":
-          functions.print_break()
-          print("Goodbye!")
-          break
-
-      else:
-          functions.print_break()
-          print("Invalid command. Type 'help' to see available commands.")
+          elif mapped_command == "settings":
+              functions.print_break()
+              settings()
