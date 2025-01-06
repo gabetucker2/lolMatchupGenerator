@@ -124,8 +124,8 @@ def validate_input_champs(data, input_champs, name_mapping):
     return valid_champs, invalid_champs
 
 def analyze_champ_picks(data, current_pool, input_champs):
-    """Analyze matchups for the provided input champions against the current pool."""
-    
+    """Analyze matchups for the provided input champions against the current pool, excluding input champions as output options."""
+
     # Normalize the dataset
     normalized_data = normalize_data(data)
 
@@ -136,12 +136,15 @@ def analyze_champ_picks(data, current_pool, input_champs):
     if not valid_input_champs:
         raise ValueError("None of the provided input champions exist in the dataset.")
 
+    # Exclude input champions from the current pool
+    filtered_pool = [champ for champ in current_pool if champ not in input_champs]
+
     # Results storage
     results_raw = {}
     results_normalized = {}
 
     # Collect win rates
-    for pool_champ in current_pool:
+    for pool_champ in filtered_pool:
         winrates_raw = [
             data.loc[input_champ, pool_champ]
             for input_champ in valid_input_champs
@@ -172,26 +175,34 @@ def analyze_champ_picks(data, current_pool, input_champs):
     # Build the output table
     table = "+" + "-" * 160 + "+\n"
     table += "| {:<15} |".format("Champion")
-    for champ in current_pool:
+    for champ in filtered_pool:
         table += " {:<15} |".format(champ)
     table += " {:<20} | {:<20} |\n".format("Best Raw Champ", "Best Norm Champ")
     table += "+" + "-" * 160 + "+\n"
 
     for input_champ in valid_input_champs:
         row = "| {:<15} |".format(input_champ.title())
-        for champ in current_pool:
+        for champ in filtered_pool:
             if input_champ in data.index and champ in data.columns:
                 row += " {:<15} |".format(f"{data.loc[input_champ, champ]:.2f}->{normalized_data.loc[input_champ, champ]:.2f}")
             else:
                 row += " {:<15} |".format("/")
-        best_non_norm = max(current_pool, key=lambda x: data.loc[input_champ, x] if input_champ in data.index and x in data.columns else 0, default='/')
-        best_norm = max(current_pool, key=lambda x: normalized_data.loc[input_champ, x] if input_champ in normalized_data.index and x in normalized_data.columns else 0, default='/')
+        best_non_norm = max(
+            filtered_pool,
+            key=lambda x: data.loc[input_champ, x] if input_champ in data.index and x in data.columns else 0,
+            default='/'
+        )
+        best_norm = max(
+            filtered_pool,
+            key=lambda x: normalized_data.loc[input_champ, x] if input_champ in normalized_data.index and x in normalized_data.columns else 0,
+            default='/'
+        )
         row += " {:<20} | {:<20} |\n".format(best_non_norm, best_norm)
         table += row
 
     # Add minimum non-norm row
     minRow = "| {:<15} |".format("Raw Min")
-    for champ in current_pool:
+    for champ in filtered_pool:
         min_val = data[champ].min()
         minRow += " {:<15.2f} |".format(min_val)
     minRow += " {:<20} | {:<20} |\n".format(best_raw, "/")
@@ -199,7 +210,7 @@ def analyze_champ_picks(data, current_pool, input_champs):
 
     # Add minimum norm row
     minRow = "| {:<15} |".format("Norm Min")
-    for champ in current_pool:
+    for champ in filtered_pool:
         min_val = normalized_data[champ].min()
         minRow += " {:<15.2f} |".format(min_val)
     minRow += " {:<20} | {:<20} |\n".format("/", best_normalized)
@@ -309,3 +320,24 @@ def generate_pool_stats(correlation_matrix, num_champs, top_pools, max_global_ap
     ]
 
     return clean_pools
+
+def calculate_best_bans(data, champ_or_pool, n_bans):
+    """Calculate the best bans based on lowest win rates for a given champion or champion pool."""
+    if isinstance(champ_or_pool, str):
+        # Single champion
+        if champ_or_pool not in data.columns:
+            raise ValueError(f"Champion {champ_or_pool} not found in the dataset.")
+        
+        winrates = data[champ_or_pool]
+        best_bans = winrates.nsmallest(n_bans)
+    else:
+        # Champion pool
+        valid_champs = [champ for champ in champ_or_pool if champ in data.columns]
+        if not valid_champs:
+            raise ValueError("No valid champions from the pool found in the dataset.")
+
+        # Calculate the average win rates against the pool
+        avg_winrates = data[valid_champs].mean(axis=1)
+        best_bans = avg_winrates.nsmallest(n_bans)
+
+    return best_bans

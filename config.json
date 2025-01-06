@@ -2,12 +2,11 @@
     "your_name": "Gabriel",
     "input_file": "top.tsv",
     "current_champion_pool": [
-        "ornn",
-        "heimerdinger",
-        "trundle",
-        "singed",
-        "galio",
-        "udyr"
+        "Singed",
+        "Illaoi",
+        "Galio",
+        "Heimerdinger",
+        "Gwen"
     ],
     "heatmap_settings": {
         "figsize": [
