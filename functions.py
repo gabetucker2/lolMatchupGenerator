@@ -25,7 +25,7 @@ def save_config(config, config_file_path):
 # Data Loading and Normalization
 def load_data(file_path):
     """Load data from a TSV file and handle missing or invalid entries."""
-    data = pd.read_csv(os.path.join(os.getcwd(), file_path), sep='\t', index_col=0)
+    data = pd.read_csv(os.path.join(os.getcwd(), 'inputs', file_path), sep='\t', index_col=0)
     data.replace("/", pd.NA, inplace=True)
     return data.apply(pd.to_numeric)
 
