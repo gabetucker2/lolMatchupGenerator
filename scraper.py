@@ -1,3 +1,19 @@
+"""
+See here for OP.GG policy regarding scraping data: 
+https://help.op.gg/hc/en-us/articles/31091405109401-Can-I-use-OP-GG-data
+
+    |Q. Can I crawl or scrape data from OP.GG?
+    |
+    |While OP.GG does not generally prohibit data crawling or web scraping, using the data for commercial 
+    |purposes without source attribution or making excessive requests that affect service operations may lead 
+    |to restricted access. Please ensure proper source attribution when using the data and avoid activities 
+    |that could impact service stability.
+
+This script makes one request per role to get the list of champions, and then one request per champion for each role.
+On average OP.GG shows about 50 champions per role by default, so this results in about 255 requests total which should 
+not impact their service stability.
+"""
+
 import requests
 import pandas as pd
 
