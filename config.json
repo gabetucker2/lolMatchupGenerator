@@ -1,12 +1,10 @@
 {
     "your_name": "Gabriel",
-    "input_file": "top.tsv",
+    "input_file": "matchups_top_expansive.tsv",
     "current_champion_pool": [
-        "Singed",
-        "Illaoi",
-        "Galio",
-        "Heimerdinger",
-        "Gwen"
+        "Swain",
+        "Camille",
+        "Singed"
     ],
     "heatmap_settings": {
         "figsize": [
