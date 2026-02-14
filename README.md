@@ -47,6 +47,9 @@
 
 ## Running the Matchup Generator
 
+
+**This is all outdated information.**
+
 ### Step 1: Configure Settings
 - Open the `config.json` file in the project folder.
 - Adjust the settings to your preference, such as adding champions to the `exclude_champions` or `only_include_champions` lists if you don't want certain champions to be included, or if you only want certain champions to be included. If `only_include_champions` has at least one element, the script will ignore `exclude_champions`.
@@ -55,6 +58,49 @@
 1. Double-click the `run.bat` file in the project folder.
 2. A Command Prompt will open, displaying the best top lane champ pools based on the provided data.
 3. A heatmap will open, visualizing all champ matchup correlations.
+
+## Analyze-Champs Metric Definitions (Source of Truth)
+
+All analyze-champs error metrics are computed per champion row `i` across valid matchup columns `j`.
+
+- `wr_ij`: matchup win rate for champion `i` into opponent `j`.
+- `b_i`: baseline win rate for champion `i`.
+- `w_ij`: games-based matchup weight proxy from the aligned `games` matrix.
+- `M_i`: valid matchups for row `i` after masking.
+
+Baseline resolution order:
+1. Explicit baseline argument.
+2. `data.attrs["champion_baseline_winrate"]` when present.
+3. Procedurally derive champion baselines from raw bulk matchup rows (`source_champion`, `win_rate`, `games`) when source-page baseline columns are unavailable.
+4. If none of the above are available, metric computation raises a `ValueError` (no scalar fallback).
+
+Masking policy:
+1. Exclude missing matchup win rates.
+2. Exclude self-matchups (`i == j`) when row/column labels overlap.
+3. For weighted metrics, also exclude missing/nonpositive weights.
+4. If a champion row has no valid positive weights after masking, that metric returns `NaN` for that champion and emits a warning.
+
+Formulas:
+1. `mae`: `MAE_i = mean_{j in M_i} |wr_ij - b_i|`
+2. `rmse`: `RMSE_i = sqrt(mean_{j in M_i} (wr_ij - b_i)^2 )`
+3. `medae`: `MedAE_i = median_{j in M_i} |wr_ij - b_i|`
+4. `rmedse`: `RMEDSE_i = sqrt(median_{j in M_i} (wr_ij - b_i)^2 )`
+5. `mae_games_weighed`: `WMAE_i = (sum_{j in M_i} w_ij * |wr_ij - b_i|) / (sum_{j in M_i} w_ij)`
+6. `rmse_games_weighed`: weighted mean of squared errors with `w_ij`, then square root.
+7. `medae_games_weighed`: weighted median of absolute errors with `w_ij`.
+8. `rmedse_games_weighed`: weighted median of squared errors with `w_ij`, then square root.
+9. `*_games_weighed_equalized`: row-equalize weights first, then run the weighted metric.
+10. `mae_games_weighed_equalized` is exactly:
+    `w_hat_ij = w_ij / mean_{k in M_i}(w_ik)`
+    `MAE_GAMES_EQUALIZED_i = (sum_{j in M_i} w_hat_ij * |wr_ij - b_i|) / (sum_{j in M_i} w_hat_ij)`
+
+## Changelog
+
+### 2026-02-13
+- Corrected analyze-champs weighted metric pipeline to use row-oriented champion semantics (`i` as row champ, `j` as matchup champ).
+- Fixed `mae_games_weighed_equalized` to use row-wise equalization instead of prior column-equalization behavior.
+- Fixed weighted reducers to use true weighted reductions instead of multiplying errors by weights and applying unweighted column reductions.
+- Added synthetic regression tests covering manual formulas, orientation, masking/NaN policy, and the prior collapse-to-MAE bug.
 
 ---
 

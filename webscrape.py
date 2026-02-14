@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Expansive OP.GG top-lane matchup scraper.
+"""Expansive OP.GG matchup scraper across all ranked lanes.
 
-Starts from one champion (default: Camille), scrapes all matchup rows inside:
-    <ul class="border-t-gray-200">
-Then expands through discovered opponents until all reachable champions are
-processed. Results are appended to a spreadsheet-style CSV.
+By default this script crawls all 5 lanes:
+- top
+- jungle
+- mid
+- adc
+- support
+
+Each lane writes to its own CSV/TSV/XLSX set:
+- matchups_<lane>_expansive.csv
+- matchups_<lane>_expansive.tsv
+- matchups_<lane>_expansive.xlsx
+
+Rows include a `lane` field so data is categorized per role.
 """
 
 from __future__ import annotations
@@ -26,11 +35,35 @@ from xml.sax.saxutils import escape as xml_escape
 import requests
 
 
-BASE_URL_TEMPLATE = "https://op.gg/lol/champions/{slug}/counters/top"
+LANE_CONFIG: Dict[str, Dict[str, str]] = {
+    "top": {"path": "top", "seed": "Camille"},
+    "jungle": {"path": "jungle", "seed": "Elise"},
+    "mid": {"path": "mid", "seed": "Zed"},
+    "adc": {"path": "adc", "seed": "Jinx"},
+    "support": {"path": "support", "seed": "Braum"},
+}
+
+LANE_ALIASES: Dict[str, str] = {
+    "top": "top",
+    "jungle": "jungle",
+    "jg": "jungle",
+    "mid": "mid",
+    "middle": "mid",
+    "adc": "adc",
+    "bot": "adc",
+    "bottom": "adc",
+    "support": "support",
+    "sup": "support",
+}
+
+LANE_ORDER = ["top", "jungle", "mid", "adc", "support"]
+BASE_URL_TEMPLATE = "https://op.gg/lol/champions/{slug}/counters/{lane_path}"
 
 OUTPUT_FIELDS = [
+    "lane",
     "source_champion",
     "source_slug",
+    "source_page_win_rate",
     "opponent_champion",
     "opponent_slug",
     "win_rate",
@@ -47,10 +80,40 @@ CHAMPION_KEY_PATTERN = re.compile(r"/champion/([^/.?]+)\.png", re.I)
 WIN_RATE_PATTERN = re.compile(r">(\d{1,3}(?:\.\d+)?)\s*(?:<!-- -->)?\s*%\s*<")
 GAMES_SPAN_PATTERN = re.compile(r'<span class="text-xs text-gray-600">([^<]+)</span>', re.S | re.I)
 TITLE_PATTERN = re.compile(r"<title>(.*?)</title>", re.S | re.I)
+SOURCE_PAGE_WIN_RATE_PATTERN = re.compile(
+    r"<em[^>]*>\s*Win\s*rate\s*</em>\s*<b[^>]*>\s*(\d{1,3}(?:\.\d+)?)\s*(?:<!-- -->)?\s*%",
+    re.S | re.I,
+)
 
 SLUG_ALIASES = {
     "wukong": "monkeyking",
 }
+
+
+def normalize_lane_choice(value: str) -> Optional[str]:
+    token = value.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    return LANE_ALIASES.get(token)
+
+
+def parse_lane_selection(value: str) -> List[str]:
+    if value.strip().lower() == "all":
+        return LANE_ORDER.copy()
+
+    lanes: List[str] = []
+    raw_parts = [part.strip() for part in value.split(",") if part.strip()]
+    if not raw_parts:
+        raise ValueError("No lane values provided. Use 'all' or lane names.")
+
+    for part in raw_parts:
+        lane = normalize_lane_choice(part)
+        if lane is None:
+            raise ValueError(
+                f"Unsupported lane '{part}'. Use top, jungle/jg, mid, adc/bot, support/sup, or all."
+            )
+        if lane not in lanes:
+            lanes.append(lane)
+
+    return lanes
 
 
 def normalize_slug(value: str) -> str:
@@ -67,6 +130,17 @@ def parse_source_name(page_html: str, fallback: str) -> str:
     if " Counters" in title:
         return title.split(" Counters", 1)[0].strip() or fallback
     return fallback
+
+
+def parse_source_page_win_rate(page_html: str) -> Optional[float]:
+    """Parse the source champion's page-level win rate from the stats summary."""
+    match = SOURCE_PAGE_WIN_RATE_PATTERN.search(page_html)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
 
 def parse_games(value: str) -> Optional[int]:
@@ -141,20 +215,21 @@ def parse_matchups_from_html(page_html: str) -> List[Dict[str, object]]:
     return parsed_rows
 
 
-def is_valid_counters_url(url: str) -> bool:
+def is_valid_counters_url(url: str, lane_path: str) -> bool:
     parsed = urlparse(url)
     path = parsed.path.rstrip("/")
-    return path.startswith("/lol/champions/") and path.endswith("/counters/top")
+    return path.startswith("/lol/champions/") and path.endswith(f"/counters/{lane_path}")
 
 
 def fetch_champion_page(
     session: requests.Session,
     slug: str,
+    lane_path: str,
     timeout: float,
     retries: int,
     retry_delay: float,
 ) -> Tuple[Optional[str], str]:
-    target_url = BASE_URL_TEMPLATE.format(slug=slug)
+    target_url = BASE_URL_TEMPLATE.format(slug=slug, lane_path=lane_path)
     last_reason = ""
 
     for attempt in range(1, retries + 1):
@@ -172,7 +247,7 @@ def fetch_champion_page(
                 time.sleep(retry_delay * attempt)
             continue
 
-        if not is_valid_counters_url(response.url):
+        if not is_valid_counters_url(response.url, lane_path):
             last_reason = f"resolved to non-champion counters page: {response.url}"
             return None, last_reason
 
@@ -220,6 +295,7 @@ def load_existing_state(
 def ensure_csv_writer(
     output_path: Path,
 ) -> Tuple[csv.DictWriter, object]:
+    _ensure_csv_schema(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = output_path.exists() and output_path.stat().st_size > 0
     outfile = output_path.open("a", newline="", encoding="utf-8")
@@ -227,6 +303,25 @@ def ensure_csv_writer(
     if not file_exists:
         writer.writeheader()
     return writer, outfile
+
+
+def _ensure_csv_schema(output_path: Path) -> None:
+    """Backfill older CSV headers so new fields can be appended safely."""
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        return
+
+    with output_path.open("r", newline="", encoding="utf-8") as infile:
+        reader = csv.DictReader(infile)
+        existing_fields = reader.fieldnames or []
+        if existing_fields == OUTPUT_FIELDS:
+            return
+        existing_rows = [dict(row) for row in reader]
+
+    with output_path.open("w", newline="", encoding="utf-8") as outfile:
+        writer = csv.DictWriter(outfile, fieldnames=OUTPUT_FIELDS)
+        writer.writeheader()
+        for row in existing_rows:
+            writer.writerow({field: row.get(field, "") for field in OUTPUT_FIELDS})
 
 
 def load_csv_rows(csv_path: Path) -> List[Dict[str, str]]:
@@ -344,8 +439,10 @@ def write_excel_workbook(csv_path: Path, excel_path: Path) -> None:
     for row in rows:
         raw_table.append(
             [
+                row.get("lane", ""),
                 row.get("source_champion", ""),
                 row.get("source_slug", ""),
+                to_float_or_none(row.get("source_page_win_rate", "")) if row.get("source_page_win_rate") else "",
                 row.get("opponent_champion", ""),
                 row.get("opponent_slug", ""),
                 to_float_or_none(row.get("win_rate", "")) if row.get("win_rate") else "",
@@ -436,6 +533,7 @@ def update_matrix_and_excel_outputs(
 
 
 def crawl_expansive(
+    lane: str,
     start_champion: str,
     output_path: Path,
     matrix_output_path: Optional[Path],
@@ -445,15 +543,17 @@ def crawl_expansive(
     retries: int,
     max_champions: Optional[int],
 ) -> None:
+    lane_path = LANE_CONFIG[lane]["path"]
     start_slug = normalize_slug(start_champion)
     now_label = dt.datetime.now(dt.timezone.utc).isoformat()
-    print(f"Started crawl at {now_label}")
-    print(f"Seed champion: {start_champion} ({start_slug})")
-    print(f"Output CSV: {output_path}")
+    print("")
+    print(f"[{lane}] Started crawl at {now_label}")
+    print(f"[{lane}] Seed champion: {start_champion} ({start_slug})")
+    print(f"[{lane}] Output CSV: {output_path}")
 
     processed_slugs, known_edges, slug_to_name, _ = load_existing_state(output_path)
     if processed_slugs:
-        print(f"Resuming from existing CSV. Already processed champions: {len(processed_slugs)}")
+        print(f"[{lane}] Resuming from existing CSV. Already processed champions: {len(processed_slugs)}")
 
     queue: Deque[str] = deque()
     queued_slugs: Set[str] = set()
@@ -473,7 +573,7 @@ def crawl_expansive(
         enqueue(known_slug, slug_to_name.get(known_slug))
 
     if not queue:
-        print("No champions left to process.")
+        print(f"[{lane}] No champions left to process.")
         return
 
     session = requests.Session()
@@ -492,7 +592,7 @@ def crawl_expansive(
     try:
         while queue:
             if max_champions is not None and champions_processed_this_run >= max_champions:
-                print(f"Reached max champion limit: {max_champions}")
+                print(f"[{lane}] Reached max champion limit: {max_champions}")
                 break
 
             source_slug = queue.popleft()
@@ -501,30 +601,32 @@ def crawl_expansive(
             if source_slug in processed_slugs:
                 continue
 
-            target_url = BASE_URL_TEMPLATE.format(slug=source_slug)
+            target_url = BASE_URL_TEMPLATE.format(slug=source_slug, lane_path=lane_path)
             source_name_fallback = slug_to_name.get(source_slug, source_slug.title())
             print("")
-            print(f"Scraping: {source_name_fallback} ({source_slug})")
+            print(f"[{lane}] Scraping: {source_name_fallback} ({source_slug})")
 
             page_html, failure_reason = fetch_champion_page(
                 session=session,
                 slug=source_slug,
+                lane_path=lane_path,
                 timeout=timeout_seconds,
                 retries=retries,
                 retry_delay=max(delay_seconds, 0.5),
             )
             if page_html is None:
-                print(f"Skipped {source_slug}: {failure_reason}")
+                print(f"[{lane}] Skipped {source_slug}: {failure_reason}")
                 processed_slugs.add(source_slug)
                 champions_processed_this_run += 1
                 continue
 
             source_name = parse_source_name(page_html, source_name_fallback)
+            source_page_win_rate = parse_source_page_win_rate(page_html)
             slug_to_name[source_slug] = source_name
 
             matchups = parse_matchups_from_html(page_html)
             if not matchups:
-                print("No matchup rows found in target UL; marking champion as processed.")
+                print(f"[{lane}] No matchup rows found in target UL; marking champion as processed.")
                 processed_slugs.add(source_slug)
                 champions_processed_this_run += 1
                 if delay_seconds > 0:
@@ -551,8 +653,12 @@ def crawl_expansive(
 
                 csv_writer.writerow(
                     {
+                        "lane": lane,
                         "source_champion": source_name,
                         "source_slug": source_slug,
+                        "source_page_win_rate": (
+                            f"{source_page_win_rate:.2f}" if isinstance(source_page_win_rate, float) else ""
+                        ),
                         "opponent_champion": opponent_name,
                         "opponent_slug": opponent_slug,
                         "win_rate": f"{win_rate:.2f}" if isinstance(win_rate, float) else "",
@@ -570,9 +676,9 @@ def crawl_expansive(
             champions_processed_this_run += 1
 
             unique_discovered = sorted(set(discovered_names), key=str.casefold)
-            print(f"Counter matchup champs ({len(unique_discovered)}): {', '.join(unique_discovered)}")
+            print(f"[{lane}] Counter matchup champs ({len(unique_discovered)}): {', '.join(unique_discovered)}")
             print(
-                "Summary: "
+                f"[{lane}] Summary: "
                 f"{new_rows_for_source} new rows, "
                 f"{len(processed_slugs)} total champions processed, "
                 f"{len(queue)} queued."
@@ -586,44 +692,79 @@ def crawl_expansive(
         outfile.close()
 
     print("")
-    print("Crawl complete.")
-    print(f"Champions processed this run: {champions_processed_this_run}")
-    print(f"Rows written this run: {rows_written_this_run}")
-    print(f"CSV saved to: {output_path}")
+    print(f"[{lane}] Crawl complete.")
+    print(f"[{lane}] Champions processed this run: {champions_processed_this_run}")
+    print(f"[{lane}] Rows written this run: {rows_written_this_run}")
+    print(f"[{lane}] CSV saved to: {output_path}")
+
+
+def write_combined_lane_csv(output_dir: Path, lanes: List[str]) -> None:
+    all_rows: List[Dict[str, str]] = []
+
+    for lane in lanes:
+        lane_csv_path = output_dir / f"matchups_{lane}_expansive.csv"
+        if not lane_csv_path.exists():
+            continue
+        all_rows.extend(load_csv_rows(lane_csv_path))
+
+    if not all_rows:
+        print("No per-lane CSV rows found; skipped combined CSV.")
+        return
+
+    all_rows.sort(
+        key=lambda row: (
+            str(row.get("lane", "")),
+            str(row.get("source_champion", "")).casefold(),
+            str(row.get("opponent_champion", "")).casefold(),
+        )
+    )
+
+    combined_path = output_dir / "matchups_all_lanes_expansive.csv"
+    with combined_path.open("w", newline="", encoding="utf-8") as outfile:
+        writer = csv.DictWriter(outfile, fieldnames=OUTPUT_FIELDS)
+        writer.writeheader()
+        for row in all_rows:
+            writer.writerow({field: row.get(field, "") for field in OUTPUT_FIELDS})
+
+    print(f"Combined all-lane CSV written: {combined_path}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Scrape OP.GG top-lane counters expansively, starting from one champion "
-            "and iterating through all discovered opponents."
+            "Scrape OP.GG counters expansively for one or more lanes and export "
+            "lane-specific matrices."
         )
     )
     parser.add_argument(
+        "--lanes",
+        default="all",
+        help="Lanes to scrape: all, top, jungle/jg, mid, adc/bot, support/sup.",
+    )
+    parser.add_argument(
         "--start",
-        default="Camille",
-        help="Seed champion to start from (default: Camille).",
+        default=None,
+        help="Optional seed champion override applied to each selected lane.",
     )
     parser.add_argument(
-        "--output",
-        default="matchups_top_expansive.csv",
-        help="Output CSV path for scraped matchup rows.",
+        "--output-dir",
+        default=".",
+        help="Directory where per-lane output files are written.",
     )
     parser.add_argument(
-        "--matrix-output",
-        default="matchups_top_expansive.tsv",
-        help=(
-            "TSV matrix output path. Table is dynamically expanded as champs are "
-            "discovered (row=play-as champ, column=opponent)."
-        ),
+        "--no-matrix",
+        action="store_true",
+        help="Skip per-lane matrix TSV export.",
     )
     parser.add_argument(
-        "--excel-output",
-        default="matchups_top_expansive.xlsx",
-        help=(
-            "Excel workbook output path. Generates two worksheets automatically: "
-            "raw matchup rows and the square matrix."
-        ),
+        "--no-excel",
+        action="store_true",
+        help="Skip per-lane Excel export.",
+    )
+    parser.add_argument(
+        "--skip-combined",
+        action="store_true",
+        help="Skip writing matchups_all_lanes_expansive.csv.",
     )
     parser.add_argument(
         "--delay",
@@ -647,27 +788,42 @@ def parse_args() -> argparse.Namespace:
         "--max-champions",
         type=int,
         default=None,
-        help="Optional cap for number of champions to process (useful for testing).",
+        help="Optional cap for number of champions to process per lane (useful for testing).",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output_path = Path(args.output).resolve()
-    matrix_output_path = Path(args.matrix_output).resolve() if args.matrix_output else None
-    excel_output_path = Path(args.excel_output).resolve() if args.excel_output else None
 
-    crawl_expansive(
-        start_champion=args.start,
-        output_path=output_path,
-        matrix_output_path=matrix_output_path,
-        excel_output_path=excel_output_path,
-        delay_seconds=max(0.0, args.delay),
-        timeout_seconds=max(1.0, args.timeout),
-        retries=max(1, args.retries),
-        max_champions=args.max_champions,
-    )
+    try:
+        lanes = parse_lane_selection(args.lanes)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for lane in lanes:
+        start_champion = args.start if args.start else LANE_CONFIG[lane]["seed"]
+        output_path = output_dir / f"matchups_{lane}_expansive.csv"
+        matrix_output_path = None if args.no_matrix else output_dir / f"matchups_{lane}_expansive.tsv"
+        excel_output_path = None if args.no_excel else output_dir / f"matchups_{lane}_expansive.xlsx"
+
+        crawl_expansive(
+            lane=lane,
+            start_champion=start_champion,
+            output_path=output_path,
+            matrix_output_path=matrix_output_path,
+            excel_output_path=excel_output_path,
+            delay_seconds=max(0.0, args.delay),
+            timeout_seconds=max(1.0, args.timeout),
+            retries=max(1, args.retries),
+            max_champions=args.max_champions,
+        )
+
+    if not args.skip_combined:
+        write_combined_lane_csv(output_dir, lanes)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,258 @@
+TOP LANE
+
+1. Zac: 5.13 (best counterpick, worst blindpick)
+2. Master Yi: 4.94
+3. Vayne: 4.86
+4. Anivia: 4.78
+5. Naafiri: 4.69
+6. Heimerdinger: 4.62
+7. Maokai: 4.52
+8. Sylas: 4.10
+9. Quinn: 3.95
+10. Cassiopeia: 3.86
+11. Warwick: 3.58
+12. Varus: 3.42
+13. Swain: 3.37
+14. Aurora: 3.26
+15. Dr. Mundo: 3.22
+16. Irelia: 3.21
+17. Teemo: 3.20
+18. Yasuo: 3.18
+19. Malphite: 3.18
+20. Wukong: 3.14
+21. Poppy: 3.12
+22. Tahm Kench: 3.03
+23. Cho'Gath: 2.94
+24. Singed: 2.90
+25. Ryze: 2.87
+26. Yorick: 2.84
+27. Akali: 2.82
+28. Renekton: 2.75
+29. Volibear: 2.75
+30. Jayce: 2.74
+31. Kennen: 2.74
+32. Vladimir: 2.72
+33. Trundle: 2.72
+34. Kayle: 2.68
+35. Urgot: 2.61
+36. Illaoi: 2.60
+37. Sion: 2.60
+38. Yone: 2.59
+39. Garen: 2.51
+40. Gwen: 2.51
+41. Fiora: 2.50
+42. Jax: 2.48
+43. Pantheon: 2.48
+44. Riven: 2.48
+45. Kled: 2.48
+46. K'Sante: 2.48
+47. Olaf: 2.42
+48. Sett: 2.38
+49. Tryndamere: 2.32
+50. Gragas: 2.32
+51. Nasus: 2.30
+52. Gnar: 2.24
+53. Camille: 2.23
+54. Rumble: 2.08
+55. Gangplank: 2.08
+56. Darius: 2.03
+57. Ambessa: 2.01
+58. Shen: 1.80
+59. Zaahen: 1.74
+60. Mordekaiser: 1.72
+61. Aatrox: 1.65
+62. Ornn: 1.57 (best blindpick, worst counterpick)
+
+JUNGLE
+
+1. Skarner: 3.82 (best counterpick, worst blindpick)
+2. Rammus: 3.43
+3. Gragas: 3.30
+4. Malphite: 3.00
+5. Nasus: 2.96
+6. Sejuani: 2.95
+7. Zyra: 2.89
+8. Aatrox: 2.85
+9. Shyvana: 2.85
+10. Ivern: 2.79
+11. Pantheon: 2.70
+12. Amumu: 2.64
+13. Trundle: 2.62
+14. Naafiri: 2.59
+15. Warwick: 2.52
+16. Wukong: 2.45
+17. Dr. Mundo: 2.45
+18. Evelynn: 2.41
+19. Udyr: 2.38
+20. Nidalee: 2.37
+21. Sylas: 2.30
+22. Elise: 2.30
+23. Nunu & Willump: 2.28
+24. Gwen: 2.27
+25. Bel'Veth: 2.26
+26. Karthus: 2.24
+27. Qiyana: 2.23
+28. Taliyah: 2.21
+29. Rengar: 2.21
+30. Zed: 2.21
+31. Jax: 2.20
+32. Master Yi: 2.11
+33. Jayce: 2.09
+34. Zac: 2.04
+35. Lillia: 2.02
+36. Volibear: 1.97
+37. Shaco: 1.95
+38. Kindred: 1.94
+39. Fiddlesticks: 1.93
+40. Graves: 1.90
+41. Viego: 1.86
+42. Kha'Zix: 1.82
+43. Diana: 1.81
+44. Briar: 1.78
+45. Rek'Sai: 1.75
+46. Nocturne: 1.72
+47. Hecarim: 1.72
+48. Ambessa: 1.71
+49. Talon: 1.70
+50. Lee Sin: 1.69
+51. Ekko: 1.67
+52. Zaahen: 1.62
+53. Kayn: 1.54
+54. Jarvan Iv: 1.40
+55. Vi: 1.33
+56. Xin Zhao: 1.24 (best blindpick, worst counterpick)
+
+MID LANE
+
+1. Malphite: 4.45 (best counterpick, worst blindpick)
+2. Smolder: 3.94
+3. Kennen: 3.65
+4. Jayce: 3.63
+5. Vel'Koz: 3.63
+6. Sion: 3.61
+7. Aurelion Sol: 3.52
+8. Pantheon: 3.33
+9. Taliyah: 3.32
+10. Brand: 3.29
+11. Annie: 3.22
+12. Ziggs: 3.04
+13. Cho'Gath: 2.95
+14. Cassiopeia: 2.87
+15. Mel: 2.86
+16. Vex: 2.84
+17. Naafiri: 2.80
+18. Kayle: 2.75
+19. Xerath: 2.72
+20. Irelia: 2.70
+21. Vladimir: 2.70
+22. Syndra: 2.70
+23. Malzahar: 2.67
+24. Veigar: 2.60
+25. Anivia: 2.58
+26. Yone: 2.57
+27. Hwei: 2.50
+28. Galio: 2.49
+29. Zoe: 2.47
+30. Swain: 2.45
+31. Azir: 2.39
+32. Fizz: 2.35
+33. Ryze: 2.34
+34. Katarina: 2.32
+35. Lux: 2.32
+36. Talon: 2.30
+37. Akali: 2.30
+38. Aurora: 2.29
+39. Akshan: 2.25
+40. Diana: 2.21
+41. Twisted Fate: 2.18
+42. Lissandra: 2.15
+43. Leblanc: 2.11
+44. Zed: 2.08
+45. Viktor: 2.08
+46. Yasuo: 2.08
+47. Ekko: 1.98
+48. Sylas: 1.98
+49. Qiyana: 1.96
+50. Kassadin: 1.89
+51. Orianna: 1.88
+52. Ahri: 1.69 (best blindpick, worst counterpick)
+
+ADC
+
+1. Seraphine: 3.23 (best counterpick, worst blindpick)
+2. Senna: 2.99
+3. Yasuo: 2.82
+4. Nilah: 2.76
+5. Kalista: 2.76
+6. Veigar: 2.60
+7. Kog'Maw: 2.27
+8. Mel: 2.22
+9. Brand: 2.18
+10. Samira: 2.06
+11. Xayah: 1.95
+12. Sivir: 1.90
+13. Vayne: 1.87
+14. Aphelios: 1.84
+15. Kai'Sa: 1.72
+16. Zeri: 1.72
+17. Draven: 1.65
+18. Smolder: 1.63
+19. Swain: 1.61
+20. Tristana: 1.57
+21. Yunara: 1.57
+22. Miss Fortune: 1.53
+23. Ziggs: 1.49
+24. Twitch: 1.48
+25. Ashe: 1.42
+26. Lucian: 1.39
+27. Caitlyn: 1.37
+28. Varus: 1.33
+29. Jhin: 1.28
+30. Jinx: 1.24
+31. Ezreal: 1.16
+32. Corki: 1.05 (best blindpick, worst counterpick)
+
+SUPPORT
+
+1. Ashe: 3.59 (best counterpick, worst blindpick)
+2. Leblanc: 3.45
+3. Mel: 3.12
+4. Elise: 3.08
+5. Zoe: 3.05
+6. Swain: 3.02
+7. Shaco: 2.97
+8. Fiddlesticks: 2.87
+9. Xerath: 2.63
+10. Brand: 2.51
+11. Taric: 2.51
+12. Pantheon: 2.42
+13. Yuumi: 2.37
+14. Morgana: 2.33
+15. Tahm Kench: 2.26
+16. Zyra: 2.20
+17. Rell: 2.19
+18. Leona: 2.17
+19. Poppy: 2.17
+20. Renata Glasc: 2.14
+21. Rakan: 2.13
+22. Nautilus: 2.08
+23. Braum: 1.99
+24. Lux: 1.98
+25. Seraphine: 1.97
+26. Blitzcrank: 1.96
+27. Alistar: 1.95
+28. Senna: 1.92
+29. Vel'Koz: 1.92
+30. Maokai: 1.89
+31. Soraka: 1.89
+32. Pyke: 1.78
+33. Karma: 1.76
+34. Sona: 1.73
+35. Janna: 1.71
+36. Neeko: 1.68
+37. Zilean: 1.66
+38. Milio: 1.66
+39. Lulu: 1.51
+40. Bard: 1.46
+41. Nami: 1.40
+42. Thresh: 1.31 (best blindpick, worst counterpick)
