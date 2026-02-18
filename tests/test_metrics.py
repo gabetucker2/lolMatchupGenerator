@@ -293,6 +293,21 @@ class MetricMathTests(unittest.TestCase):
         self.assertAlmostEqual(float(baselines.loc["A"]), 52.0, places=9)
         self.assertAlmostEqual(float(baselines.loc["B"]), 48.0, places=9)
 
+    def test_source_page_baseline_missing_values_fall_back_to_bulk_matchup_data(self):
+        raw_data = pd.DataFrame(
+            {
+                "source_champion": ["A", "A", "B", "B"],
+                "opponent_champion": ["X", "Y", "X", "Y"],
+                "source_page_win_rate": [0.52, 0.52, np.nan, np.nan],
+                "win_rate": [90.0, 10.0, 0.60, 0.40],
+                "games": [100, 100, 10, 30],
+            }
+        )
+        baselines = functions._derive_champion_baselines_from_raw_data(raw_data, ["A", "B"])
+
+        self.assertAlmostEqual(float(baselines.loc["A"]), 52.0, places=9)
+        self.assertAlmostEqual(float(baselines.loc["B"]), 45.0, places=9)
+
 
 class PoolAnalysisTests(unittest.TestCase):
     def _build_pool_fixture(self):
@@ -346,6 +361,58 @@ class PoolAnalysisTests(unittest.TestCase):
         data = self._build_pool_fixture()
         with self.assertRaisesRegex(ValueError, "confidence_level must be between 0 and 1"):
             functions.calculate_best_champ_additions_with_ci(data, current_pool=["A"], confidence_level=1.0)
+
+
+class ChampPickAnalysisTests(unittest.TestCase):
+    def _build_fixture(self):
+        champions = ["A", "B", "C"]
+        return pd.DataFrame(
+            [
+                [np.nan, 10.0, 20.0],
+                [90.0, np.nan, 30.0],
+                [80.0, 70.0, np.nan],
+            ],
+            index=champions,
+            columns=champions,
+            dtype=np.float64,
+        )
+
+    def _table_rows_by_label(self, table):
+        lines = [line for line in table.splitlines() if line.startswith("|")]
+        header_cells = [cell.strip() for cell in lines[0].split("|")[1:-1]]
+        rows = {}
+        for line in lines[1:]:
+            cells = [cell.strip() for cell in line.split("|")[1:-1]]
+            rows[cells[0]] = dict(zip(header_cells[1:], cells[1:]))
+        return rows
+
+    def test_champ_pick_uses_column_champ_winrate_against_row_champ(self):
+        data = self._build_fixture()
+        table = functions.analyze_champ_picks(
+            data,
+            current_pool=["B", "C"],
+            input_champs=["A"],
+        )
+        rows = self._table_rows_by_label(table)
+
+        self.assertEqual(rows["A"]["B"], "90.00% -> 55.00% (norm)")
+        self.assertEqual(rows["A"]["C"], "80.00% -> 45.00% (norm)")
+        self.assertEqual(rows["A"]["Best Raw Champ"], "B")
+        self.assertEqual(rows["A"]["Best Norm Champ"], "B")
+
+    def test_champ_pick_min_rows_match_column_against_row_orientation(self):
+        data = self._build_fixture()
+        table = functions.analyze_champ_picks(
+            data,
+            current_pool=["B", "C"],
+            input_champs=["A"],
+        )
+        rows = self._table_rows_by_label(table)
+
+        self.assertEqual(rows["Raw Min"]["B"], "30.00%")
+        self.assertEqual(rows["Raw Min"]["C"], "70.00%")
+        self.assertEqual(rows["Norm Min"]["B"], "55.00%")
+        self.assertEqual(rows["Norm Min"]["C"], "45.00%")
 
 
 if __name__ == "__main__":

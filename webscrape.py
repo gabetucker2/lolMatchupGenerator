@@ -13,7 +13,7 @@ Each lane writes to its own CSV/TSV/XLSX set:
 - matchups_<lane>_expansive.tsv
 - matchups_<lane>_expansive.xlsx
 
-Rows include a `lane` field so data is categorized per role.
+Rows include `lane` and `patch` fields so data is categorized per role and patch.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import argparse
 import csv
 import datetime as dt
 import html
+import json
 import re
 import time
 import unicodedata
@@ -29,7 +30,7 @@ import zipfile
 from collections import deque
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Set, Tuple
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
@@ -58,9 +59,11 @@ LANE_ALIASES: Dict[str, str] = {
 
 LANE_ORDER = ["top", "jungle", "mid", "adc", "support"]
 BASE_URL_TEMPLATE = "https://op.gg/lol/champions/{slug}/counters/{lane_path}"
+DEFAULT_PATCHES = ["16.03", "16.02"]
 
 OUTPUT_FIELDS = [
     "lane",
+    "patch",
     "source_champion",
     "source_slug",
     "source_page_win_rate",
@@ -114,6 +117,73 @@ def parse_lane_selection(value: str) -> List[str]:
             lanes.append(lane)
 
     return lanes
+
+
+def normalize_patch_token(value: str) -> Optional[str]:
+    token = value.strip()
+    if not token:
+        return None
+    if not re.fullmatch(r"\d+\.\d{2}", token):
+        return None
+    return token
+
+
+def parse_patch_selection(value: str) -> List[str]:
+    raw_parts = [part.strip() for part in value.split(",") if part.strip()]
+    if not raw_parts:
+        raise ValueError("No patch values provided.")
+
+    return _normalize_patch_parts(raw_parts)
+
+
+def _normalize_patch_parts(raw_parts: List[str]) -> List[str]:
+    if not raw_parts:
+        raise ValueError("No patch values provided.")
+
+    patches: List[str] = []
+    for part in raw_parts:
+        normalized = normalize_patch_token(part)
+        if normalized is None:
+            raise ValueError(
+                f"Unsupported patch '{part}'. Use comma-separated values like 16.03,16.02."
+            )
+        if normalized not in patches:
+            patches.append(normalized)
+    return patches
+
+
+def parse_patch_config_value(value: object) -> Optional[List[str]]:
+    """Parse patch config values from JSON list or comma-separated string."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return parse_patch_selection(value)
+    if isinstance(value, list):
+        raw_parts = [str(part).strip() for part in value if str(part).strip()]
+        return _normalize_patch_parts(raw_parts)
+    raise ValueError("config patches must be a string or a list.")
+
+
+def load_patches_from_config(config_path: Path) -> Optional[List[str]]:
+    """Load patch list from config.json key `patches`, when available."""
+    if not config_path.exists():
+        return None
+
+    try:
+        with config_path.open("r", encoding="utf-8") as infile:
+            config_data = json.load(infile)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"Unable to parse config file '{config_path}': {error}") from error
+
+    if not isinstance(config_data, dict):
+        raise ValueError(f"Config file '{config_path}' must contain a JSON object.")
+
+    return parse_patch_config_value(config_data.get("patches"))
+
+
+def build_counters_url(slug: str, lane_path: str, patch: str) -> str:
+    base_url = BASE_URL_TEMPLATE.format(slug=slug, lane_path=lane_path)
+    return f"{base_url}?{urlencode({'patch': patch})}"
 
 
 def normalize_slug(value: str) -> str:
@@ -225,11 +295,12 @@ def fetch_champion_page(
     session: requests.Session,
     slug: str,
     lane_path: str,
+    patch: str,
     timeout: float,
     retries: int,
     retry_delay: float,
 ) -> Tuple[Optional[str], str]:
-    target_url = BASE_URL_TEMPLATE.format(slug=slug, lane_path=lane_path)
+    target_url = build_counters_url(slug=slug, lane_path=lane_path, patch=patch)
     last_reason = ""
 
     for attempt in range(1, retries + 1):
@@ -258,38 +329,38 @@ def fetch_champion_page(
 
 def load_existing_state(
     output_path: Path,
-) -> Tuple[Set[str], Set[Tuple[str, str]], Dict[str, str], Dict[str, str]]:
-    processed_slugs: Set[str] = set()
-    known_edges: Set[Tuple[str, str]] = set()
+    patches: List[str],
+) -> Tuple[Set[Tuple[str, str]], Set[Tuple[str, str, str]], Dict[str, str]]:
+    processed_source_patches: Set[Tuple[str, str]] = set()
+    known_edges: Set[Tuple[str, str, str]] = set()
     slug_to_name: Dict[str, str] = {}
-    source_to_url: Dict[str, str] = {}
 
     if not output_path.exists() or output_path.stat().st_size == 0:
-        return processed_slugs, known_edges, slug_to_name, source_to_url
+        return processed_source_patches, known_edges, slug_to_name
 
     with output_path.open("r", newline="", encoding="utf-8") as infile:
         reader = csv.DictReader(infile)
         for row in reader:
             source_slug = (row.get("source_slug") or "").strip()
             source_name = (row.get("source_champion") or "").strip()
-            source_url = (row.get("url") or "").strip()
             opponent_slug = (row.get("opponent_slug") or "").strip()
             opponent_name = (row.get("opponent_champion") or "").strip()
+            patch = infer_row_patch(row)
+            if patch not in patches:
+                patch = patches[0]
 
             if source_slug:
-                processed_slugs.add(source_slug)
+                processed_source_patches.add((source_slug, patch))
                 if source_name and source_slug not in slug_to_name:
                     slug_to_name[source_slug] = source_name
-                if source_url:
-                    source_to_url[source_slug] = source_url
 
             if opponent_slug and opponent_name and opponent_slug not in slug_to_name:
                 slug_to_name[opponent_slug] = opponent_name
 
-            if source_slug and opponent_slug:
-                known_edges.add((source_slug, opponent_slug))
+            if source_slug and opponent_slug and patch:
+                known_edges.add((source_slug, opponent_slug, patch))
 
-    return processed_slugs, known_edges, slug_to_name, source_to_url
+    return processed_source_patches, known_edges, slug_to_name
 
 
 def ensure_csv_writer(
@@ -305,6 +376,21 @@ def ensure_csv_writer(
     return writer, outfile
 
 
+def infer_row_patch(row: Dict[str, str]) -> str:
+    patch = (row.get("patch") or "").strip()
+    if patch:
+        return patch
+
+    url = (row.get("url") or "").strip()
+    if url:
+        parsed_query = parse_qs(urlparse(url).query)
+        url_patch = (parsed_query.get("patch") or [""])[0].strip()
+        if url_patch:
+            return url_patch
+
+    return DEFAULT_PATCHES[0]
+
+
 def _ensure_csv_schema(output_path: Path) -> None:
     """Backfill older CSV headers so new fields can be appended safely."""
     if not output_path.exists() or output_path.stat().st_size == 0:
@@ -313,15 +399,18 @@ def _ensure_csv_schema(output_path: Path) -> None:
     with output_path.open("r", newline="", encoding="utf-8") as infile:
         reader = csv.DictReader(infile)
         existing_fields = reader.fieldnames or []
-        if existing_fields == OUTPUT_FIELDS:
-            return
         existing_rows = [dict(row) for row in reader]
+        has_blank_patch_rows = any(not (row.get("patch") or "").strip() for row in existing_rows)
+        if existing_fields == OUTPUT_FIELDS and not has_blank_patch_rows:
+            return
 
     with output_path.open("w", newline="", encoding="utf-8") as outfile:
         writer = csv.DictWriter(outfile, fieldnames=OUTPUT_FIELDS)
         writer.writeheader()
         for row in existing_rows:
-            writer.writerow({field: row.get(field, "") for field in OUTPUT_FIELDS})
+            row_payload = {field: row.get(field, "") for field in OUTPUT_FIELDS}
+            row_payload["patch"] = infer_row_patch(row)
+            writer.writerow(row_payload)
 
 
 def load_csv_rows(csv_path: Path) -> List[Dict[str, str]]:
@@ -349,13 +438,44 @@ def build_matrix_from_rows(
             seen_names.add(opponent)
             champion_order.append(opponent)
 
-    winrate_lookup: Dict[Tuple[str, str], str] = {}
+    winrate_accumulator: Dict[Tuple[str, str], Dict[str, float]] = {}
     for row in rows:
         source = (row.get("source_champion") or "").strip()
         opponent = (row.get("opponent_champion") or "").strip()
-        win_rate = (row.get("win_rate") or "").strip()
-        if source and opponent and win_rate:
-            winrate_lookup[(source, opponent)] = win_rate
+        raw_win_rate = (row.get("win_rate") or "").strip()
+        raw_games = (row.get("games") or "").strip()
+        win_rate_value = to_float_or_none(raw_win_rate)
+        if not source or not opponent or win_rate_value is None:
+            continue
+
+        games_value = parse_games(raw_games) if raw_games else None
+        key = (source, opponent)
+        bucket = winrate_accumulator.setdefault(
+            key,
+            {
+                "weighted_sum": 0.0,
+                "weight_total": 0.0,
+                "unweighted_sum": 0.0,
+                "unweighted_count": 0.0,
+            },
+        )
+
+        if games_value is not None and games_value > 0:
+            bucket["weighted_sum"] += win_rate_value * games_value
+            bucket["weight_total"] += float(games_value)
+        else:
+            bucket["unweighted_sum"] += win_rate_value
+            bucket["unweighted_count"] += 1.0
+
+    winrate_lookup: Dict[Tuple[str, str], str] = {}
+    for key, bucket in winrate_accumulator.items():
+        if bucket["weight_total"] > 0:
+            win_rate = bucket["weighted_sum"] / bucket["weight_total"]
+        elif bucket["unweighted_count"] > 0:
+            win_rate = bucket["unweighted_sum"] / bucket["unweighted_count"]
+        else:
+            continue
+        winrate_lookup[key] = f"{win_rate:.2f}"
 
     return champion_order, winrate_lookup
 
@@ -440,6 +560,7 @@ def write_excel_workbook(csv_path: Path, excel_path: Path) -> None:
         raw_table.append(
             [
                 row.get("lane", ""),
+                row.get("patch", ""),
                 row.get("source_champion", ""),
                 row.get("source_slug", ""),
                 to_float_or_none(row.get("source_page_win_rate", "")) if row.get("source_page_win_rate") else "",
@@ -535,6 +656,7 @@ def update_matrix_and_excel_outputs(
 def crawl_expansive(
     lane: str,
     start_champion: str,
+    patches: List[str],
     output_path: Path,
     matrix_output_path: Optional[Path],
     excel_output_path: Optional[Path],
@@ -549,21 +671,37 @@ def crawl_expansive(
     print("")
     print(f"[{lane}] Started crawl at {now_label}")
     print(f"[{lane}] Seed champion: {start_champion} ({start_slug})")
+    print(f"[{lane}] Patches: {', '.join(patches)}")
     print(f"[{lane}] Output CSV: {output_path}")
 
-    processed_slugs, known_edges, slug_to_name, _ = load_existing_state(output_path)
-    if processed_slugs:
-        print(f"[{lane}] Resuming from existing CSV. Already processed champions: {len(processed_slugs)}")
+    if excel_output_path is not None and excel_output_path.exists():
+        excel_output_path.unlink()
+        print(f"[{lane}] Removed existing Excel workbook for full rebuild: {excel_output_path}")
+
+    processed_source_patches, known_edges, slug_to_name = load_existing_state(output_path, patches)
+    fully_processed_sources = {
+        slug
+        for slug in {source_slug for source_slug, _ in processed_source_patches}
+        if all((slug, patch) in processed_source_patches for patch in patches)
+    }
+    if processed_source_patches:
+        print(
+            f"[{lane}] Resuming from existing CSV. "
+            f"Already processed champions (all requested patches): {len(fully_processed_sources)}"
+        )
 
     queue: Deque[str] = deque()
     queued_slugs: Set[str] = set()
+
+    def is_source_fully_processed(slug: str) -> bool:
+        return all((slug, patch) in processed_source_patches for patch in patches)
 
     def enqueue(slug: str, name: Optional[str] = None) -> None:
         if not slug:
             return
         if name and slug not in slug_to_name:
             slug_to_name[slug] = name
-        if slug in processed_slugs or slug in queued_slugs:
+        if is_source_fully_processed(slug) or slug in queued_slugs:
             return
         queue.append(slug)
         queued_slugs.add(slug)
@@ -574,6 +712,8 @@ def crawl_expansive(
 
     if not queue:
         print(f"[{lane}] No champions left to process.")
+        update_matrix_and_excel_outputs(output_path, matrix_output_path, excel_output_path)
+        print(f"[{lane}] Rebuilt matrix/Excel outputs from existing CSV state.")
         return
 
     session = requests.Session()
@@ -589,6 +729,8 @@ def crawl_expansive(
     champions_processed_this_run = 0
     rows_written_this_run = 0
 
+    update_matrix_and_excel_outputs(output_path, matrix_output_path, excel_output_path)
+
     try:
         while queue:
             if max_champions is not None and champions_processed_this_run >= max_champions:
@@ -598,89 +740,102 @@ def crawl_expansive(
             source_slug = queue.popleft()
             queued_slugs.discard(source_slug)
 
-            if source_slug in processed_slugs:
+            if is_source_fully_processed(source_slug):
                 continue
 
-            target_url = BASE_URL_TEMPLATE.format(slug=source_slug, lane_path=lane_path)
             source_name_fallback = slug_to_name.get(source_slug, source_slug.title())
             print("")
             print(f"[{lane}] Scraping: {source_name_fallback} ({source_slug})")
 
-            page_html, failure_reason = fetch_champion_page(
-                session=session,
-                slug=source_slug,
-                lane_path=lane_path,
-                timeout=timeout_seconds,
-                retries=retries,
-                retry_delay=max(delay_seconds, 0.5),
-            )
-            if page_html is None:
-                print(f"[{lane}] Skipped {source_slug}: {failure_reason}")
-                processed_slugs.add(source_slug)
-                champions_processed_this_run += 1
-                continue
-
-            source_name = parse_source_name(page_html, source_name_fallback)
-            source_page_win_rate = parse_source_page_win_rate(page_html)
-            slug_to_name[source_slug] = source_name
-
-            matchups = parse_matchups_from_html(page_html)
-            if not matchups:
-                print(f"[{lane}] No matchup rows found in target UL; marking champion as processed.")
-                processed_slugs.add(source_slug)
-                champions_processed_this_run += 1
-                if delay_seconds > 0:
-                    time.sleep(delay_seconds)
-                continue
-
             discovered_names: List[str] = []
-            scraped_at = dt.datetime.now(dt.timezone.utc).isoformat()
             new_rows_for_source = 0
-
-            for matchup in matchups:
-                opponent_name = str(matchup["opponent_name"])
-                opponent_slug = str(matchup["opponent_slug"])
-                win_rate = matchup.get("win_rate")
-                games = matchup.get("games")
-
-                if opponent_slug:
-                    enqueue(opponent_slug, opponent_name)
-                discovered_names.append(opponent_name)
-
-                edge_key = (source_slug, opponent_slug)
-                if edge_key in known_edges:
+            for patch in patches:
+                source_patch_key = (source_slug, patch)
+                if source_patch_key in processed_source_patches:
                     continue
 
-                csv_writer.writerow(
-                    {
-                        "lane": lane,
-                        "source_champion": source_name,
-                        "source_slug": source_slug,
-                        "source_page_win_rate": (
-                            f"{source_page_win_rate:.2f}" if isinstance(source_page_win_rate, float) else ""
-                        ),
-                        "opponent_champion": opponent_name,
-                        "opponent_slug": opponent_slug,
-                        "win_rate": f"{win_rate:.2f}" if isinstance(win_rate, float) else "",
-                        "games": games if isinstance(games, int) else "",
-                        "url": target_url,
-                        "scraped_at_utc": scraped_at,
-                    }
+                target_url = build_counters_url(slug=source_slug, lane_path=lane_path, patch=patch)
+                page_html, failure_reason = fetch_champion_page(
+                    session=session,
+                    slug=source_slug,
+                    lane_path=lane_path,
+                    patch=patch,
+                    timeout=timeout_seconds,
+                    retries=retries,
+                    retry_delay=max(delay_seconds, 0.5),
                 )
-                known_edges.add(edge_key)
-                new_rows_for_source += 1
-                rows_written_this_run += 1
+                if page_html is None:
+                    print(f"[{lane}] Skipped {source_slug} patch {patch}: {failure_reason}")
+                    processed_source_patches.add(source_patch_key)
+                    continue
+
+                source_name = parse_source_name(page_html, source_name_fallback)
+                source_page_win_rate = parse_source_page_win_rate(page_html)
+                slug_to_name[source_slug] = source_name
+
+                matchups = parse_matchups_from_html(page_html)
+                if not matchups:
+                    print(
+                        f"[{lane}] No matchup rows found in target UL for {source_slug} patch {patch}; "
+                        f"marking patch as processed."
+                    )
+                    processed_source_patches.add(source_patch_key)
+                    continue
+
+                scraped_at = dt.datetime.now(dt.timezone.utc).isoformat()
+                for matchup in matchups:
+                    opponent_name = str(matchup["opponent_name"])
+                    opponent_slug = str(matchup["opponent_slug"])
+                    win_rate = matchup.get("win_rate")
+                    games = matchup.get("games")
+
+                    if opponent_slug:
+                        enqueue(opponent_slug, opponent_name)
+                    discovered_names.append(opponent_name)
+
+                    edge_key = (source_slug, opponent_slug, patch)
+                    if edge_key in known_edges:
+                        continue
+
+                    csv_writer.writerow(
+                        {
+                            "lane": lane,
+                            "patch": patch,
+                            "source_champion": source_name,
+                            "source_slug": source_slug,
+                            "source_page_win_rate": (
+                                f"{source_page_win_rate:.2f}" if isinstance(source_page_win_rate, float) else ""
+                            ),
+                            "opponent_champion": opponent_name,
+                            "opponent_slug": opponent_slug,
+                            "win_rate": f"{win_rate:.2f}" if isinstance(win_rate, float) else "",
+                            "games": games if isinstance(games, int) else "",
+                            "url": target_url,
+                            "scraped_at_utc": scraped_at,
+                        }
+                    )
+                    known_edges.add(edge_key)
+                    new_rows_for_source += 1
+                    rows_written_this_run += 1
+
+                processed_source_patches.add(source_patch_key)
 
             outfile.flush()
-            processed_slugs.add(source_slug)
             champions_processed_this_run += 1
 
             unique_discovered = sorted(set(discovered_names), key=str.casefold)
             print(f"[{lane}] Counter matchup champs ({len(unique_discovered)}): {', '.join(unique_discovered)}")
+            fully_processed_count = len(
+                {
+                    slug
+                    for slug in {source for source, _ in processed_source_patches}
+                    if all((slug, patch) in processed_source_patches for patch in patches)
+                }
+            )
             print(
                 f"[{lane}] Summary: "
                 f"{new_rows_for_source} new rows, "
-                f"{len(processed_slugs)} total champions processed, "
+                f"{fully_processed_count} total champions processed, "
                 f"{len(queue)} queued."
             )
 
@@ -690,6 +845,8 @@ def crawl_expansive(
                 time.sleep(delay_seconds)
     finally:
         outfile.close()
+
+    update_matrix_and_excel_outputs(output_path, matrix_output_path, excel_output_path)
 
     print("")
     print(f"[{lane}] Crawl complete.")
@@ -714,6 +871,7 @@ def write_combined_lane_csv(output_dir: Path, lanes: List[str]) -> None:
     all_rows.sort(
         key=lambda row: (
             str(row.get("lane", "")),
+            str(row.get("patch", "")),
             str(row.get("source_champion", "")).casefold(),
             str(row.get("opponent_champion", "")).casefold(),
         )
@@ -745,6 +903,20 @@ def parse_args() -> argparse.Namespace:
         "--start",
         default=None,
         help="Optional seed champion override applied to each selected lane.",
+    )
+    parser.add_argument(
+        "--patches",
+        default=None,
+        help=(
+            "Comma-separated patch list to scrape. "
+            "If omitted, reads `patches` from config.json; "
+            "if missing there, falls back to 16.03,16.02."
+        ),
+    )
+    parser.add_argument(
+        "--config",
+        default="config.json",
+        help="Config file path used for patch fallback (default: config.json).",
     )
     parser.add_argument(
         "--output-dir",
@@ -801,6 +973,19 @@ def main() -> None:
     except ValueError as error:
         raise SystemExit(str(error)) from error
 
+    config_path = Path(args.config).resolve()
+    if args.patches is not None:
+        try:
+            patches = parse_patch_selection(args.patches)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+    else:
+        try:
+            config_patches = load_patches_from_config(config_path)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+        patches = config_patches if config_patches is not None else DEFAULT_PATCHES.copy()
+
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -813,6 +998,7 @@ def main() -> None:
         crawl_expansive(
             lane=lane,
             start_champion=start_champion,
+            patches=patches,
             output_path=output_path,
             matrix_output_path=matrix_output_path,
             excel_output_path=excel_output_path,

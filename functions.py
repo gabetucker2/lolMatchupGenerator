@@ -67,7 +67,11 @@ def load_matchup_games_data(file_path, matrix_index, matrix_columns):
             continue
 
         games_value = float(row["games"])
-        games_matrix.loc[source_champ, opponent_champ] = games_value
+        existing_games_value = games_matrix.loc[source_champ, opponent_champ]
+        if pd.isna(existing_games_value):
+            games_matrix.loc[source_champ, opponent_champ] = games_value
+        else:
+            games_matrix.loc[source_champ, opponent_champ] = float(existing_games_value) + games_value
         opponent_game_totals.loc[opponent_champ] += games_value
         total_games += games_value
 
@@ -127,6 +131,9 @@ def _derive_champion_baselines_from_raw_data(raw_data, matrix_columns):
     2. Procedural baseline from bulk matchup rows using source champion matchup win rates.
        - Weighted mean by games when positive games exist.
        - Unweighted mean otherwise.
+
+    If source-page win rates are available but incomplete, missing champions are
+    backfilled procedurally from matchup rows.
     """
     if raw_data is None or "source_champion" not in raw_data.columns:
         return None
@@ -141,65 +148,81 @@ def _derive_champion_baselines_from_raw_data(raw_data, matrix_columns):
     ]
     baseline_column = next((candidate for candidate in baseline_candidates if candidate in raw_data.columns), None)
 
+    source_page_baselines = None
     if baseline_column is not None:
         source_baselines = _coerce_winrate_to_percent(raw_data[baseline_column])
         baseline_rows = raw_data.assign(_baseline=source_baselines).dropna(subset=["_baseline"])
+        baseline_rows = baseline_rows.copy()
+        baseline_rows["_source_norm"] = baseline_rows["source_champion"].map(
+            lambda value: normalize_champ_name(str(value))
+        )
+        if "patch" in baseline_rows.columns:
+            baseline_rows["_patch_group"] = baseline_rows["patch"].fillna("").astype(str)
+            baseline_rows = (
+                baseline_rows.groupby(["_source_norm", "_patch_group"], as_index=False)["_baseline"].mean()
+            )
+        else:
+            baseline_rows = baseline_rows.groupby(["_source_norm"], as_index=False)["_baseline"].mean()
         grouped_values = {}
 
         for _, row in baseline_rows.iterrows():
-            source_normalized = normalize_champ_name(str(row["source_champion"]))
+            source_normalized = str(row["_source_norm"])
             source_champ = column_mapping.get(source_normalized)
             if source_champ is None:
                 continue
             grouped_values.setdefault(source_champ, []).append(float(row["_baseline"]))
 
         if grouped_values:
-            baselines = pd.Series(
+            source_page_baselines = pd.Series(
                 {champ: float(np.mean(values)) for champ, values in grouped_values.items()},
                 dtype=float,
-            )
-            return baselines.reindex(matrix_columns)
+            ).reindex(matrix_columns)
 
-    if "win_rate" not in raw_data.columns:
-        return None
+    if source_page_baselines is not None and not source_page_baselines.isna().any():
+        return source_page_baselines
 
-    matchup_winrates = _coerce_winrate_to_percent(raw_data["win_rate"])
-    if "games" in raw_data.columns:
-        matchup_games = pd.to_numeric(raw_data["games"], errors="coerce")
-    else:
-        matchup_games = pd.Series(np.nan, index=raw_data.index, dtype=float)
-
-    matchup_rows = raw_data.assign(_wr=matchup_winrates, _games=matchup_games).dropna(subset=["_wr"])
-    if matchup_rows.empty:
-        return None
-
-    grouped_values = {}
-    grouped_weights = {}
-    for _, row in matchup_rows.iterrows():
-        source_normalized = normalize_champ_name(str(row["source_champion"]))
-        source_champ = column_mapping.get(source_normalized)
-        if source_champ is None:
-            continue
-
-        wr_value = float(row["_wr"])
-        game_value = float(row["_games"]) if pd.notna(row["_games"]) else np.nan
-        grouped_values.setdefault(source_champ, []).append(wr_value)
-        grouped_weights.setdefault(source_champ, []).append(game_value)
-
-    if not grouped_values:
-        return None
-
-    baselines = {}
-    for champ, values in grouped_values.items():
-        value_array = np.asarray(values, dtype=np.float64)
-        weight_array = np.asarray(grouped_weights.get(champ, []), dtype=np.float64)
-        valid_weights = np.isfinite(weight_array) & (weight_array > 0)
-        if np.any(valid_weights):
-            baselines[champ] = float(np.average(value_array[valid_weights], weights=weight_array[valid_weights]))
+    procedural_baselines = None
+    if "win_rate" in raw_data.columns:
+        matchup_winrates = _coerce_winrate_to_percent(raw_data["win_rate"])
+        if "games" in raw_data.columns:
+            matchup_games = pd.to_numeric(raw_data["games"], errors="coerce")
         else:
-            baselines[champ] = float(np.mean(value_array))
+            matchup_games = pd.Series(np.nan, index=raw_data.index, dtype=float)
 
-    return pd.Series(baselines, dtype=float).reindex(matrix_columns)
+        matchup_rows = raw_data.assign(_wr=matchup_winrates, _games=matchup_games).dropna(subset=["_wr"])
+        if not matchup_rows.empty:
+            grouped_values = {}
+            grouped_weights = {}
+            for _, row in matchup_rows.iterrows():
+                source_normalized = normalize_champ_name(str(row["source_champion"]))
+                source_champ = column_mapping.get(source_normalized)
+                if source_champ is None:
+                    continue
+
+                wr_value = float(row["_wr"])
+                game_value = float(row["_games"]) if pd.notna(row["_games"]) else np.nan
+                grouped_values.setdefault(source_champ, []).append(wr_value)
+                grouped_weights.setdefault(source_champ, []).append(game_value)
+
+            if grouped_values:
+                baselines = {}
+                for champ, values in grouped_values.items():
+                    value_array = np.asarray(values, dtype=np.float64)
+                    weight_array = np.asarray(grouped_weights.get(champ, []), dtype=np.float64)
+                    valid_weights = np.isfinite(weight_array) & (weight_array > 0)
+                    if np.any(valid_weights):
+                        baselines[champ] = float(np.average(value_array[valid_weights], weights=weight_array[valid_weights]))
+                    else:
+                        baselines[champ] = float(np.mean(value_array))
+
+                procedural_baselines = pd.Series(baselines, dtype=float).reindex(matrix_columns)
+
+    if source_page_baselines is not None:
+        if procedural_baselines is not None:
+            return source_page_baselines.fillna(procedural_baselines)
+        return source_page_baselines
+
+    return procedural_baselines
 
 def load_source_page_winrates(file_path, matrix_columns):
     """
@@ -850,96 +873,161 @@ def analyze_champ_picks(data, current_pool, input_champs):
     # Normalize the dataset
     normalized_data = normalize_data(data)
 
-    # Ensure input champions exist in the dataset
-    valid_input_champs = [champ for champ in input_champs if champ in data.index]
+    # Read matchup values as: column champion's win rate versus row champion.
+    def get_intersection_value(matrix, column_champ, row_champ):
+        if column_champ not in matrix.index or row_champ not in matrix.columns:
+            return np.nan
+        return matrix.loc[column_champ, row_champ]
+
+    def calculate_average(values):
+        finite_values = [float(value) for value in values if pd.notna(value)]
+        if not finite_values:
+            return np.nan
+        return float(np.mean(finite_values))
+
+    def pick_best_champion(score_by_champion):
+        finite_scores = {
+            champion: float(score)
+            for champion, score in score_by_champion.items()
+            if pd.notna(score)
+        }
+        if not finite_scores:
+            return "/"
+        return max(finite_scores, key=finite_scores.get)
+
+    def format_matchup_percent(raw_value, norm_value):
+        if pd.isna(raw_value) or pd.isna(norm_value):
+            return "/"
+        return f"{float(raw_value):.2f}% -> {float(norm_value):.2f}% (norm)"
+
+    def format_percent(value):
+        if pd.isna(value):
+            return "/"
+        return f"{float(value):.2f}%"
+
+    # Ensure input champions exist in the dataset as row labels.
+    valid_input_champs = [champ for champ in input_champs if champ in data.columns]
 
     # Warn if no valid input champions are found
     if not valid_input_champs:
         raise ValueError("None of the provided input champions exist in the dataset.")
 
-    # Exclude input champions from the current pool
-    filtered_pool = [champ for champ in current_pool if champ not in input_champs]
+    # Exclude input champions from output options and keep champions available as column labels.
+    filtered_pool = [
+        champ
+        for champ in current_pool
+        if champ not in input_champs and champ in data.index
+    ]
 
     # Results storage
     results_raw = {}
     results_normalized = {}
 
-    # Collect win rates
+    # Collect win rates (column champion vs each row champion).
     for pool_champ in filtered_pool:
         winrates_raw = [
-            data.loc[input_champ, pool_champ]
+            get_intersection_value(data, pool_champ, input_champ)
             for input_champ in valid_input_champs
-            if input_champ in data.index and pool_champ in data.columns
         ]
         winrates_normalized = [
-            normalized_data.loc[input_champ, pool_champ]
+            get_intersection_value(normalized_data, pool_champ, input_champ)
             for input_champ in valid_input_champs
-            if input_champ in normalized_data.index and pool_champ in normalized_data.columns
         ]
         results_raw[pool_champ] = winrates_raw
         results_normalized[pool_champ] = winrates_normalized
 
     # Calculate averages for normalized and non-normalized
     averages_raw = {
-        champ: sum(winrates) / len(winrates) if winrates else 0
+        champ: calculate_average(winrates)
         for champ, winrates in results_raw.items()
     }
     averages_normalized = {
-        champ: sum(winrates) / len(winrates) if winrates else 0
+        champ: calculate_average(winrates)
         for champ, winrates in results_normalized.items()
     }
 
     # Determine best champs
-    best_raw = max(averages_raw, key=averages_raw.get, default="/")
-    best_normalized = max(averages_normalized, key=averages_normalized.get, default="/")
+    best_raw = pick_best_champion(averages_raw)
+    best_normalized = pick_best_champion(averages_normalized)
+
+    champion_col_width = max(
+        15,
+        len("Champion"),
+        len("Raw Min"),
+        len("Norm Min"),
+        max((len(champ.title()) for champ in valid_input_champs), default=0),
+    )
+    matchup_col_width = max(31, len("100.00% -> 100.00% (norm)"))
+    best_col_width = max(
+        20,
+        len("Best Raw Champ"),
+        len("Best Norm Champ"),
+        max((len(champ) for champ in filtered_pool), default=0),
+    )
+
+    columns = [("Champion", champion_col_width)]
+    columns.extend((champ, matchup_col_width) for champ in filtered_pool)
+    columns.extend(
+        [
+            ("Best Raw Champ", best_col_width),
+            ("Best Norm Champ", best_col_width),
+        ]
+    )
+
+    def build_separator():
+        return "+" + "+".join("-" * (width + 2) for _, width in columns) + "+\n"
+
+    def build_row(values):
+        return "|" + "|".join(
+            f" {str(value):<{width}} "
+            for value, (_, width) in zip(values, columns)
+        ) + "|\n"
 
     # Build the output table
-    table = "+" + "-" * 160 + "+\n"
-    table += "| {:<15} |".format("Champion")
-    for champ in filtered_pool:
-        table += " {:<15} |".format(champ)
-    table += " {:<20} | {:<20} |\n".format("Best Raw Champ", "Best Norm Champ")
-    table += "+" + "-" * 160 + "+\n"
+    table = build_separator()
+    table += build_row([column_name for column_name, _ in columns])
+    table += build_separator()
 
     for input_champ in valid_input_champs:
-        row = "| {:<15} |".format(input_champ.title())
+        raw_scores_for_input = {
+            champ: get_intersection_value(data, champ, input_champ)
+            for champ in filtered_pool
+        }
+        norm_scores_for_input = {
+            champ: get_intersection_value(normalized_data, champ, input_champ)
+            for champ in filtered_pool
+        }
+        best_non_norm = pick_best_champion(raw_scores_for_input)
+        best_norm = pick_best_champion(norm_scores_for_input)
+
+        row_values = [input_champ.title()]
         for champ in filtered_pool:
-            if input_champ in data.index and champ in data.columns:
-                row += " {:<15} |".format(f"{data.loc[input_champ, champ]:.2f}->{normalized_data.loc[input_champ, champ]:.2f}")
-            else:
-                row += " {:<15} |".format("/")
-        best_non_norm = max(
-            filtered_pool,
-            key=lambda x: data.loc[input_champ, x] if input_champ in data.index and x in data.columns else 0,
-            default='/'
-        )
-        best_norm = max(
-            filtered_pool,
-            key=lambda x: normalized_data.loc[input_champ, x] if input_champ in normalized_data.index and x in normalized_data.columns else 0,
-            default='/'
-        )
-        row += " {:<20} | {:<20} |\n".format(best_non_norm, best_norm)
-        table += row
+            row_values.append(
+                format_matchup_percent(
+                    raw_scores_for_input.get(champ, np.nan),
+                    norm_scores_for_input.get(champ, np.nan),
+                )
+            )
+        row_values.extend([best_non_norm, best_norm])
+        table += build_row(row_values)
 
-    # Add minimum non-norm row
-    minRow = "| {:<15} |".format("Raw Min")
+    # Add minimum non-normalized row
+    min_row_values = ["Raw Min"]
     for champ in filtered_pool:
-        min_val = data[champ].min()
-        minRow += " {:<15.2f} |".format(min_val)
-    minRow += " {:<20} | {:<20} |\n".format(best_raw, "/")
-    table += minRow
+        min_val = data.loc[champ].min(skipna=True) if champ in data.index else np.nan
+        min_row_values.append(format_percent(min_val))
+    min_row_values.extend([best_raw, "/"])
+    table += build_row(min_row_values)
 
-    # Add minimum norm row
-    minRow = "| {:<15} |".format("Norm Min")
+    # Add minimum normalized row
+    min_row_values = ["Norm Min"]
     for champ in filtered_pool:
-        min_val = normalized_data[champ].min()
-        minRow += " {:<15.2f} |".format(min_val)
-    minRow += " {:<20} | {:<20} |\n".format("/", best_normalized)
-    table += minRow
+        min_val = normalized_data.loc[champ].min(skipna=True) if champ in normalized_data.index else np.nan
+        min_row_values.append(format_percent(min_val))
+    min_row_values.extend(["/", best_normalized])
+    table += build_row(min_row_values)
 
-    table += "+" + "-" * 160 + "+\n"
-
-    table = table.replace('nan->nan', '/       ')
+    table += build_separator()
 
     return table
 

@@ -1,10 +1,14 @@
 {
     "your_name": "Gabriel",
+    "patches": [
+        "16.03",
+        "16.02"
+    ],
     "lane_mode": "top",
     "input_file": "matchups_top_expansive.tsv",
     "current_champion_pool": [
-        "Swain",
-        "Singed"
+        "Camille",
+	"Singed"
     ],
     "heatmap_settings": {
         "figsize": [
